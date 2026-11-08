@@ -47,7 +47,7 @@ jobs:
         run: npm install
 
       - name: Créer le .env de CI (valeurs factices, aucun secret)
-        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env
+        run: printf 'DATABASE_URL=%s\\n' "$DATABASE_URL" > .env
 
       - name: Tests unitaires
         run: npm test
@@ -76,7 +76,7 @@ jobs:
             echo "Migration init déjà présente."
           else
             # Flag récent d'abord, ancien flag en repli (le nom a changé selon les versions de Prisma 6).
-            npx --no-install prisma migrate diff --from-empty --to-schema "$SCHEMA" --script > /tmp/init.sql \
+            npx --no-install prisma migrate diff --from-empty --to-schema "$SCHEMA" --script > /tmp/init.sql \\
               || npx --no-install prisma migrate diff --from-empty --to-schema-datamodel "$SCHEMA" --script > /tmp/init.sql
             grep -q 'CREATE TABLE "User"' /tmp/init.sql
             DIR="packages/database/prisma/migrations/$(date -u +%Y%m%d%H%M%S)_init"
@@ -110,6 +110,6 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add packages/database/prisma/migrations package-lock.json
+          git add packages/database/prisma/migrations
           git commit -m "chore(db): migration init générée par la CI"
           git push
