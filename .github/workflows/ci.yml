@@ -76,8 +76,9 @@ jobs:
             echo "Migration init déjà présente."
           else
             # Flag récent d'abord, ancien flag en repli (le nom a changé selon les versions de Prisma 6).
-            npx --no-install prisma migrate diff --from-empty --to-schema "$SCHEMA" --script > /tmp/init.sql \\
-              || npx --no-install prisma migrate diff --from-empty --to-schema-datamodel "$SCHEMA" --script > /tmp/init.sql
+            if ! npx --no-install prisma migrate diff --from-empty --to-schema "$SCHEMA" --script > /tmp/init.sql; then
+              npx --no-install prisma migrate diff --from-empty --to-schema-datamodel "$SCHEMA" --script > /tmp/init.sql
+            fi
             grep -q 'CREATE TABLE "User"' /tmp/init.sql
             DIR="packages/database/prisma/migrations/$(date -u +%Y%m%d%H%M%S)_init"
             mkdir -p "$DIR"
