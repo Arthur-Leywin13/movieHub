@@ -240,7 +240,7 @@ export class PrismaCatalogRepo implements CatalogRepo {
     if (!norm) return { items: [], total: 0, page: p.page, limit: p.limit };
     const tsq = tsPrefixQuery(q);
     const conds: Prisma.Sql[] = [Prisma.sql`c."status" = 'PUBLISHED'`];
-    if (f.type) conds.push(Prisma.sql`c."type"::text = ${f.type}`);
+    if (f.type) conds.push(Prisma.sql`c."type" = ${f.type}::"ContentType"`);
     if (f.year !== undefined) conds.push(Prisma.sql`c."year" = ${f.year}`);
     if (f.genreSlug) conds.push(Prisma.sql`EXISTS (SELECT 1 FROM "ContentGenre" cg JOIN "Genre" g ON g."id" = cg."genreId" WHERE cg."contentId" = c."id" AND g."slug" = ${f.genreSlug})`);
     if (f.audio) conds.push(Prisma.sql`EXISTS (SELECT 1 FROM "ContentAudioLanguage" x JOIN "Language" l ON l."id" = x."languageId" WHERE x."contentId" = c."id" AND l."code" = ${f.audio})`);
