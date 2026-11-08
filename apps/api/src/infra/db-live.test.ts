@@ -115,7 +115,7 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     assert.equal((await titles(`les miserbles ${tag}`))[0], title, 'faute de frappe');
     assert.equal((await titles(`les miser`))[0] !== undefined, true, 'début de mot');
     assert.deepEqual(await titles(`brouillon secret ${tag}`), [], 'brouillon invisible');
-    assert.equal((await titles(`les miserables ${tag}`, { type: 'ANIME' })).length, 0, 'filtre de type');
+    assert.equal((await titles('les miserables', { type: 'ANIME' })).length, 0, 'filtre de type');
     assert.equal((await titles(`les miserables ${tag}`, { audio: 'ja' }))[0], title, 'filtre de langue');
     void draft;
   });
