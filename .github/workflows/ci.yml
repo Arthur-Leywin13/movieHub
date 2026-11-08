@@ -1,0 +1,115 @@
+# CI MoviesHub : remplace toute commande manuelle.
+# Teste le code, valide le schéma Prisma, génère la migration "init" si elle manque
+# (et la commit), puis rejoue migrations + SQL de recherche + seed + test de fumée
+# sur un vrai PostgreSQL 16.
+# NON EXÉCUTÉ dans l'environnement de création (pas de réseau) : premier lancement = premier test.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: movieshub
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: movieshub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U movieshub -d movieshub"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://movieshub:ci_password@localhost:5432/movieshub?schema=public
+      # psql n'accepte pas le paramètre ?schema=
+      PSQL_URL: postgresql://movieshub:ci_password@localhost:5432/movieshub
+      SCHEMA: packages/database/prisma/schema.prisma
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installer les dépendances
+        run: npm install
+
+      - name: Créer le .env de CI (valeurs factices, aucun secret)
+        run: printf 'DATABASE_URL=%s\n' "$DATABASE_URL" > .env
+
+      - name: Tests unitaires
+        run: npm test
+
+      - name: Typecheck (shared, config)
+        run: npm run typecheck -w @movieshub/shared -w @movieshub/config
+
+      - name: Générer le client Prisma
+        run: npm run db:generate
+
+      - name: Contrôle structurel du schéma
+        run: npm run db:check
+
+      - name: prisma validate
+        run: npx --no-install prisma validate --schema "$SCHEMA"
+
+      - name: Typecheck de database, de l'API et du bot (après génération du client Prisma)
+        run: |
+          npm run typecheck -w @movieshub/database
+          npm run typecheck -w @movieshub/api
+          npm run typecheck -w @movieshub/bot
+
+      - name: Créer la migration init si elle manque
+        run: |
+          if ls packages/database/prisma/migrations | grep -q '_init$'; then
+            echo "Migration init déjà présente."
+          else
+            # Flag récent d'abord, ancien flag en repli (le nom a changé selon les versions de Prisma 6).
+            npx --no-install prisma migrate diff --from-empty --to-schema "$SCHEMA" --script > /tmp/init.sql \
+              || npx --no-install prisma migrate diff --from-empty --to-schema-datamodel "$SCHEMA" --script > /tmp/init.sql
+            grep -q 'CREATE TABLE "User"' /tmp/init.sql
+            DIR="packages/database/prisma/migrations/$(date -u +%Y%m%d%H%M%S)_init"
+            mkdir -p "$DIR"
+            cp /tmp/init.sql "$DIR/migration.sql"
+            echo "INIT_CREATED=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Appliquer les migrations
+        run: npm run migrate:deploy -w @movieshub/database
+
+      - name: Triggers de recherche et contraintes (1re fois)
+        run: npm run db:search
+
+      - name: Rejouer le SQL pour vérifier l'idempotence
+        run: npm run db:search
+
+      - name: Seed (2 fois pour vérifier l'idempotence)
+        run: |
+          npm run db:seed
+          npm run db:seed
+
+      - name: Test de fumée SQL (recherche, CHECK, seed)
+        run: psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f packages/database/sql/smoke_test.sql
+
+      - name: Test d'intégration PostgreSQL (toutes les couches Prisma de l'API)
+        run: DB_LIVE_TEST=1 node --test --test-reporter=spec apps/api/src/infra/db-live.test.ts
+
+      - name: Publier la migration générée
+        if: env.INIT_CREATED == '1' && github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add packages/database/prisma/migrations package-lock.json
+          git commit -m "chore(db): migration init générée par la CI"
+          git push

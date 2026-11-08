@@ -1,0 +1,1292 @@
+// MoviesHub — schéma Prisma 6 / PostgreSQL 16
+//
+// Conventions
+//  - Identifiants : UUID natifs (@db.Uuid). Horodatages en UTC.
+//  - Noms de tables = noms de modèles (pas de @@map), colonnes en camelCase.
+//  - Aucun fichier vidéo en base : PostgreSQL ne garde que les métadonnées (MediaFile).
+//  - Pas de champ « langue originale » (décision du cahier des charges).
+//  - Suppression : Restrict sur le catalogue (jamais de cascade silencieuse),
+//    SetNull sur les références aux admins (l'historique survit à un admin),
+//    Cascade sur les données personnelles d'un utilisateur.
+//  - Contraintes non exprimables en Prisma (CHECK, triggers de recherche) :
+//    voir sql/search_and_constraints.sql.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+  MODERATOR
+}
+
+enum ContentType {
+  MOVIE
+  SERIES
+  ANIME
+}
+
+/// Statut de publication commun (contenu, saison, épisode, version vidéo).
+enum PublicationStatus {
+  DRAFT
+  IN_PREPARATION
+  SCHEDULED
+  PUBLISHED
+  UNPUBLISHED
+  WITHDRAWN
+  ARCHIVED
+}
+
+enum PosterKind {
+  POSTER
+  PROMOTIONAL
+}
+
+enum MediaKind {
+  VIDEO
+  IMAGE
+  TRAILER_VIDEO
+  SUBTITLE
+  OTHER
+}
+
+enum MediaFileStatus {
+  PENDING
+  READY
+  FAILED
+  DELETED
+}
+
+/// PROBED = détecté dans le fichier (ffprobe) ; DECLARED = saisi par un admin.
+enum TrackOrigin {
+  PROBED
+  DECLARED
+}
+
+enum SubtitleSource {
+  EMBEDDED
+  EXTERNAL
+}
+
+enum SubtitleFormat {
+  SRT
+  WEBVTT
+  ASS
+  SSA
+  OTHER
+}
+
+enum DownloadStatus {
+  STARTED
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum DevicePlatform {
+  ANDROID
+  WEB
+}
+
+enum NotificationType {
+  NEW_EPISODE
+  NEW_SEASON
+  NEW_LANGUAGE_VERSION
+  ANNOUNCEMENT
+  MAINTENANCE
+  CATALOG_CHANGE
+  CONTENT_WITHDRAWAL
+  ACCOUNT
+  OPERATION_CONFIRMATION
+}
+
+enum NotificationStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELED
+  FAILED
+}
+
+enum NotificationAudience {
+  ALL
+  FOLLOWERS
+  SEGMENT
+  USER
+}
+
+enum DeliveryChannel {
+  PUSH
+  IN_APP
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum AnnouncementSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum DonationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum EntitlementStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum EntitlementSource {
+  PAYMENT
+  ADMIN_GRANT
+  /// Plan sans pub acheté avec des jetons : un seul actif par utilisateur (le nouveau annule l'ancien).
+  TOKEN_PLAN
+}
+
+enum TokenReason {
+  REWARDED_AD
+  PROMO_CODE
+  PLAN_PURCHASE
+  ADMIN_ADJUSTMENT
+}
+
+enum AdFormat {
+  BANNER
+  INTERSTITIAL
+  REWARDED
+  APP_OPEN
+}
+
+enum ScheduledTargetType {
+  CONTENT
+  SEASON
+  EPISODE
+  VIDEO_ASSET
+  POSTER
+  TRAILER
+}
+
+enum ScheduledAction {
+  PUBLISH
+  UNPUBLISH
+  ARCHIVE
+}
+
+enum ScheduledStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+  CANCELED
+}
+
+enum AuditSource {
+  DASHBOARD
+  TELEGRAM_BOT
+  API
+  SYSTEM
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+}
+
+enum RequestStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+  FULFILLED
+}
+
+enum ReportType {
+  FILE_UNAVAILABLE
+  TECHNICAL_ISSUE
+  WRONG_CONTENT
+  USER_BEHAVIOR
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum SanctionType {
+  WARNING
+  SUSPENSION
+  BAN
+}
+
+// ============================================================================
+// UTILISATEURS, SESSIONS, ADMINISTRATEURS
+// ============================================================================
+
+model User {
+  id                   String     @id @default(uuid()) @db.Uuid
+  /// Toujours stocké en minuscules (normalisé par l'API).
+  email                String     @unique
+  emailVerifiedAt      DateTime?
+  /// Hash scrypt encodé "scrypt$N$r$p$sel$hash" (jamais de mot de passe en clair).
+  passwordHash         String
+  displayName          String
+  avatarUrl            String?
+  locale               String     @default("fr")
+  status               UserStatus @default(ACTIVE)
+  /// Désactivation globale des notifications.
+  notificationsEnabled Boolean    @default(true)
+  /// Synchronisation de l'historique entre appareils.
+  historySyncEnabled   Boolean    @default(true)
+  /// Son des publicités vidéo : désactivé par défaut (lecture automatique et muette).
+  adSoundEnabled       Boolean    @default(false)
+  lastLoginAt          DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  /// Suppression de compte = anonymisation + status DELETED.
+  deletedAt            DateTime?
+
+  admin                  Admin?
+  sessions               Session[]
+  passwordResetTokens    PasswordResetToken[]
+  deviceTokens           DeviceToken[]
+  favorites              Favorite[]
+  follows                Follow[]
+  watchHistory           WatchHistory[]
+  searchHistory          SearchHistory[]
+  downloads              DownloadMetadata[]
+  notificationPreferences NotificationPreference[]
+  notificationDeliveries NotificationDelivery[]
+  targetedNotifications  Notification[]
+  donations              Donation[]
+  adFreeEntitlements     AdFreeEntitlement[]
+  tokenWallet            TokenWallet?
+  tokenTransactions      TokenTransaction[]
+  rewardedAdViews        RewardedAdView[]
+  promoRedemptions       PromoRedemption[]
+  contentRequests        ContentRequest[]
+  reportsFiled           Report[]             @relation("ReportReporter")
+  reportsReceived        Report[]             @relation("ReportReported")
+  sanctions              UserSanction[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  /// HMAC-SHA256 du refresh token (clé = JWT_REFRESH_SECRET) ; le token brut n'est jamais stocké.
+  refreshTokenHash String    @unique
+  /// Hash du token précédent (rotation) : permet de détecter la réutilisation d'un ancien token.
+  previousRefreshTokenHash String?
+  deviceName       String?
+  platform         DevicePlatform?
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastUsedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([previousRefreshTokenHash])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Jeton push (FCM). userId nul = appareil non connecté (annonces globales).
+model DeviceToken {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String?        @db.Uuid
+  token      String         @unique
+  platform   DevicePlatform
+  createdAt  DateTime       @default(now())
+  lastSeenAt DateTime       @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+/// Un administrateur est toujours aussi un User (connexion dashboard).
+/// telegramId sert à autoriser le bot (jamais le @username).
+model Admin {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @unique @db.Uuid
+  telegramId BigInt?   @unique
+  role       AdminRole @default(EDITOR)
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user                   User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  uploadedMedia          MediaFile[]
+  scheduledPublications  ScheduledPublication[]
+  withdrawals            ContentWithdrawal[]
+  announcements          Announcement[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+  handledRequests        ContentRequest[]
+  handledReports         Report[]
+  issuedSanctions        UserSanction[]
+  grantedEntitlements    AdFreeEntitlement[]
+  updatedSettings        AppSetting[]
+  tokenAdjustments       TokenTransaction[]
+  createdPromoCodes      PromoCode[]
+}
+
+// ============================================================================
+// LANGUES, GENRES
+// ============================================================================
+
+/// Référentiel de langues. code = code court stable (fr, en, ja, es, pt, ...).
+model Language {
+  id         String   @id @default(uuid()) @db.Uuid
+  code       String   @unique
+  name       String
+  nativeName String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  audioContents    ContentAudioLanguage[]
+  subtitleContents ContentSubtitleLanguage[]
+  audioTracks      AudioTrack[]
+  subtitleTracks   SubtitleTrack[]
+}
+
+model Genre {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  contents ContentGenre[]
+}
+
+// ============================================================================
+// CATALOGUE
+// ============================================================================
+
+/// Fiche commune aux films, séries et animés.
+/// Les versions vidéo d'un film sont rattachées au Content ;
+/// celles des séries/animés sont rattachées aux Episode.
+model Content {
+  id               String            @id @default(uuid()) @db.Uuid
+  type             ContentType
+  slug             String            @unique
+  title            String
+  description      String?           @db.Text
+  year             Int?
+  /// Date de sortie officielle (base des « nouveautés » pour les films).
+  releaseDate      DateTime?         @db.Date
+  status           PublicationStatus @default(DRAFT)
+  publishedAt      DateTime?
+  /// Affiche principale et bande-annonce générale (une seule de chaque).
+  primaryPosterId  String?           @unique @db.Uuid
+  primaryTrailerId String?           @unique @db.Uuid
+  /// Géré par trigger (sql/search_and_constraints.sql). Non lisible par le client Prisma.
+  searchVector     Unsupported("tsvector")?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  primaryPoster  Poster?  @relation("ContentPrimaryPoster", fields: [primaryPosterId], references: [id], onDelete: SetNull)
+  primaryTrailer Trailer? @relation("ContentPrimaryTrailer", fields: [primaryTrailerId], references: [id], onDelete: SetNull)
+
+  posters           Poster[]                  @relation("PosterContent")
+  trailers          Trailer[]                 @relation("TrailerContent")
+  altTitles         ContentAltTitle[]
+  genres            ContentGenre[]
+  audioLanguages    ContentAudioLanguage[]
+  subtitleLanguages ContentSubtitleLanguage[]
+  seasons           Season[]
+  videoAssets       VideoAsset[]
+  favorites         Favorite[]
+  follows           Follow[]
+  watchHistory      WatchHistory[]
+  withdrawals       ContentWithdrawal[]
+  dailyStats        ContentStatDaily[]
+  notifications     Notification[]
+  reports           Report[]
+
+  @@index([type, status, releaseDate(sort: Desc)])
+  @@index([status, releaseDate(sort: Desc)])
+  @@index([year])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([searchVector], type: Gin)
+}
+
+model ContentAltTitle {
+  id        String   @id @default(uuid()) @db.Uuid
+  contentId String   @db.Uuid
+  title     String
+  locale    String?
+  createdAt DateTime @default(now())
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, title])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model ContentGenre {
+  contentId String @db.Uuid
+  genreId   String @db.Uuid
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  genre   Genre   @relation(fields: [genreId], references: [id], onDelete: Restrict)
+
+  @@id([contentId, genreId])
+  @@index([genreId])
+}
+
+/// Langues audio ANNONCÉES au niveau du contenu (catalogue, filtres).
+/// Ne garantit pas la présence de la piste dans chaque fichier : voir AudioTrack.
+model ContentAudioLanguage {
+  contentId  String @db.Uuid
+  languageId String @db.Uuid
+
+  content  Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  language Language @relation(fields: [languageId], references: [id], onDelete: Restrict)
+
+  @@id([contentId, languageId])
+  @@index([languageId])
+}
+
+/// Langues de sous-titres ANNONCÉES (liste indépendante de l'audio).
+model ContentSubtitleLanguage {
+  contentId  String @db.Uuid
+  languageId String @db.Uuid
+
+  content  Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  language Language @relation(fields: [languageId], references: [id], onDelete: Restrict)
+
+  @@id([contentId, languageId])
+  @@index([languageId])
+}
+
+model Season {
+  id                  String            @id @default(uuid()) @db.Uuid
+  contentId           String            @db.Uuid
+  number              Int
+  title               String?
+  description         String?           @db.Text
+  /// Date de sortie officielle de la saison (obligatoire, pas de date par épisode).
+  releaseDate         DateTime          @db.Date
+  status              PublicationStatus @default(DRAFT)
+  /// Choix admin : apparaît dans « Nouvelles saisons de cette année ».
+  featuredAsNewSeason Boolean           @default(false)
+  primaryTrailerId    String?           @unique @db.Uuid
+  publishedAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  content        Content   @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  primaryTrailer Trailer?  @relation("SeasonPrimaryTrailer", fields: [primaryTrailerId], references: [id], onDelete: SetNull)
+  trailers       Trailer[] @relation("TrailerSeason")
+  episodes       Episode[]
+
+  @@unique([contentId, number])
+  @@index([releaseDate])
+  @@index([featuredAsNewSeason, releaseDate])
+}
+
+/// Un épisode reste UNE entité, quel que soit le nombre de versions linguistiques (VideoAsset).
+model Episode {
+  id              String            @id @default(uuid()) @db.Uuid
+  seasonId        String            @db.Uuid
+  number          Int
+  title           String?
+  description     String?           @db.Text
+  durationSeconds Int?
+  /// Note facultative associée à un nouvel épisode.
+  releaseNote     String?           @db.Text
+  status          PublicationStatus @default(DRAFT)
+  publishedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  season       Season         @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  videoAssets  VideoAsset[]
+  watchHistory WatchHistory[]
+  reports      Report[]
+
+  @@unique([seasonId, number])
+  @@index([status, publishedAt])
+}
+
+// ============================================================================
+// MÉDIAS (R2), AFFICHES, BANDES-ANNONCES
+// ============================================================================
+
+/// Métadonnées d'un objet stocké dans Cloudflare R2.
+/// La suppression R2 est une opération distincte (status DELETED + deletedAt).
+model MediaFile {
+  id                String          @id @default(uuid()) @db.Uuid
+  bucket            String
+  objectKey         String
+  kind              MediaKind
+  mimeType          String?
+  sizeBytes         BigInt?
+  checksumSha256    String?
+  status            MediaFileStatus @default(PENDING)
+  /// Envoi multipart R2 en cours (nul une fois terminé) et taille des morceaux.
+  multipartUploadId String?
+  multipartPartSize Int?
+  uploadedByAdminId String?         @db.Uuid
+  verifiedAt        DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  uploadedByAdmin Admin?          @relation(fields: [uploadedByAdminId], references: [id], onDelete: SetNull)
+  posters         Poster[]
+  trailers        Trailer[]
+  videoAsset      VideoAsset?
+  subtitleTracks  SubtitleTrack[]
+
+  @@unique([bucket, objectKey])
+  @@index([kind, status])
+}
+
+/// Affiches et images promotionnelles. Jamais supprimées automatiquement :
+/// remplacer l'affiche principale = déplacer Content.primaryPosterId
+/// (l'ancienne reste, archivable via archivedAt, restaurable).
+model Poster {
+  id          String     @id @default(uuid()) @db.Uuid
+  contentId   String     @db.Uuid
+  mediaFileId String     @db.Uuid
+  kind        PosterKind @default(POSTER)
+  sortOrder   Int        @default(0)
+  archivedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  content   Content   @relation("PosterContent", fields: [contentId], references: [id], onDelete: Restrict)
+  mediaFile MediaFile @relation(fields: [mediaFileId], references: [id], onDelete: Restrict)
+  primaryOf Content?  @relation("ContentPrimaryPoster")
+
+  @@index([contentId, archivedAt, sortOrder])
+  @@index([mediaFileId])
+}
+
+/// Bande-annonce de contenu (seasonId nul) ou de saison.
+/// Source = fichier R2 (mediaFileId) ou lien externe (externalUrl), au moins un des deux.
+model Trailer {
+  id          String    @id @default(uuid()) @db.Uuid
+  contentId   String    @db.Uuid
+  seasonId    String?   @db.Uuid
+  title       String?
+  mediaFileId String?   @db.Uuid
+  externalUrl String?
+  sortOrder   Int       @default(0)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  content          Content    @relation("TrailerContent", fields: [contentId], references: [id], onDelete: Restrict)
+  season           Season?    @relation("TrailerSeason", fields: [seasonId], references: [id], onDelete: Restrict)
+  mediaFile        MediaFile? @relation(fields: [mediaFileId], references: [id], onDelete: Restrict)
+  primaryOfContent Content?   @relation("ContentPrimaryTrailer")
+  primaryOfSeason  Season?    @relation("SeasonPrimaryTrailer")
+
+  @@index([contentId, seasonId, archivedAt, sortOrder])
+  @@index([mediaFileId])
+}
+
+// ============================================================================
+// VERSIONS VIDÉO, PISTES AUDIO ET SOUS-TITRES
+// ============================================================================
+
+/// Un fichier vidéo = une version. Rattaché soit à un film (contentId),
+/// soit à un épisode (episodeId) — exactement l'un des deux (CHECK en SQL).
+/// Ajouter une langue = ajouter un VideoAsset, jamais remplacer l'existant.
+model VideoAsset {
+  id              String            @id @default(uuid()) @db.Uuid
+  contentId       String?           @db.Uuid
+  episodeId       String?           @db.Uuid
+  mediaFileId     String            @unique @db.Uuid
+  label           String?
+  status          PublicationStatus @default(DRAFT)
+  container       String?
+  videoCodec      String?
+  width           Int?
+  height          Int?
+  durationSeconds Int?
+  bitrateKbps     Int?
+  /// Partage local entre appareils autorisé pour cette version (droits de diffusion).
+  allowLocalShare Boolean           @default(false)
+  probedAt        DateTime?
+  publishedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  content        Content?           @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  episode        Episode?           @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  mediaFile      MediaFile          @relation(fields: [mediaFileId], references: [id], onDelete: Restrict)
+  audioTracks    AudioTrack[]
+  subtitleTracks SubtitleTrack[]
+  downloads      DownloadMetadata[]
+  watchHistory   WatchHistory[]
+  reports        Report[]
+
+  @@index([contentId, status])
+  @@index([episodeId, status])
+}
+
+/// Piste audio intégrée à un fichier (détectée par ffprobe ou déclarée).
+/// Le lecteur ne propose que les pistes réellement présentes.
+model AudioTrack {
+  id           String      @id @default(uuid()) @db.Uuid
+  videoAssetId String      @db.Uuid
+  languageId   String      @db.Uuid
+  /// Index du flux dans le conteneur.
+  streamIndex  Int
+  codec        String?
+  channels     Int?
+  title        String?
+  isDefault    Boolean     @default(false)
+  origin       TrackOrigin @default(PROBED)
+  createdAt    DateTime    @default(now())
+
+  videoAsset VideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  language   Language   @relation(fields: [languageId], references: [id], onDelete: Restrict)
+
+  @@unique([videoAssetId, streamIndex])
+  @@index([languageId])
+}
+
+/// Sous-titres intégrés (streamIndex) ou externes (mediaFileId vers R2).
+model SubtitleTrack {
+  id           String         @id @default(uuid()) @db.Uuid
+  videoAssetId String         @db.Uuid
+  languageId   String         @db.Uuid
+  source       SubtitleSource
+  format       SubtitleFormat
+  streamIndex  Int?
+  mediaFileId  String?        @db.Uuid
+  title        String?
+  isDefault    Boolean        @default(false)
+  isForced     Boolean        @default(false)
+  origin       TrackOrigin    @default(PROBED)
+  createdAt    DateTime       @default(now())
+
+  videoAsset VideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+  language   Language   @relation(fields: [languageId], references: [id], onDelete: Restrict)
+  mediaFile  MediaFile? @relation(fields: [mediaFileId], references: [id], onDelete: Restrict)
+
+  @@unique([videoAssetId, streamIndex])
+  @@index([languageId])
+  @@index([mediaFileId])
+}
+
+// ============================================================================
+// ENGAGEMENT UTILISATEUR
+// ============================================================================
+
+model Favorite {
+  userId    String   @db.Uuid
+  contentId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, contentId])
+  @@index([contentId])
+}
+
+/// Suivi d'une série/animé, indépendant des favoris.
+model Follow {
+  userId            String   @db.Uuid
+  contentId         String   @db.Uuid
+  notifyNewEpisodes Boolean  @default(true)
+  notifyNewSeasons  Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, contentId])
+  @@index([contentId])
+}
+
+/// Historique : film (contentId) ou épisode (episodeId), exactement l'un des deux (CHECK).
+model WatchHistory {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  contentId       String?  @db.Uuid
+  episodeId       String?  @db.Uuid
+  /// Version réellement lue (cohérence avec le fichier téléchargé).
+  videoAssetId    String?  @db.Uuid
+  positionSeconds Int      @default(0)
+  durationSeconds Int?
+  completed       Boolean  @default(false)
+  lastWatchedAt   DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content    Content?    @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  episode    Episode?    @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  videoAsset VideoAsset? @relation(fields: [videoAssetId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, contentId])
+  @@unique([userId, episodeId])
+  @@index([userId, lastWatchedAt(sort: Desc)])
+}
+
+model SearchHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  query     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+/// Trace serveur d'un téléchargement (statistiques). Les fichiers téléchargés restent
+/// sur l'appareil : aucune suppression à distance n'est prévue.
+model DownloadMetadata {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String?        @db.Uuid
+  videoAssetId  String         @db.Uuid
+  status        DownloadStatus @default(STARTED)
+  sizeBytes     BigInt?
+  appVersion    String?
+  failureReason String?
+  startedAt     DateTime       @default(now())
+  completedAt   DateTime?
+
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  videoAsset VideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Restrict)
+
+  @@index([videoAssetId, status])
+  @@index([userId, startedAt])
+}
+
+/// Compteurs quotidiens agrégés, base du calcul dynamique des tendances.
+model ContentStatDaily {
+  contentId String   @db.Uuid
+  date      DateTime @db.Date
+  views     Int      @default(0)
+  downloads Int      @default(0)
+  favorites Int      @default(0)
+  plays     Int      @default(0)
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, date])
+  @@index([date])
+}
+
+// ============================================================================
+// NOTIFICATIONS ET ANNONCES
+// ============================================================================
+
+model NotificationPreference {
+  userId    String           @db.Uuid
+  type      NotificationType
+  enabled   Boolean          @default(true)
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, type])
+}
+
+/// Message de notification (campagne). L'envoi par destinataire est dans NotificationDelivery.
+model Notification {
+  id               String               @id @default(uuid()) @db.Uuid
+  type             NotificationType
+  status           NotificationStatus   @default(DRAFT)
+  audience         NotificationAudience
+  /// Filtre de ciblage pour audience SEGMENT.
+  segment          Json?
+  targetUserId     String?              @db.Uuid
+  contentId        String?              @db.Uuid
+  title            String
+  body             String               @db.Text
+  data             Json?
+  /// Clé d'idempotence (ex. "episode:<id>:published") contre les envois en double.
+  dedupeKey        String?              @unique
+  scheduledFor     DateTime?
+  sentAt           DateTime?
+  createdByAdminId String?              @db.Uuid
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  targetUser     User?                  @relation(fields: [targetUserId], references: [id], onDelete: Cascade)
+  content        Content?               @relation(fields: [contentId], references: [id], onDelete: SetNull)
+  createdByAdmin Admin?                 @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  deliveries     NotificationDelivery[]
+
+  @@index([status, scheduledFor])
+  @@index([contentId])
+}
+
+model NotificationDelivery {
+  id             String          @id @default(uuid()) @db.Uuid
+  notificationId String          @db.Uuid
+  userId         String          @db.Uuid
+  channel        DeliveryChannel
+  status         DeliveryStatus  @default(PENDING)
+  error          String?
+  sentAt         DateTime?
+  readAt         DateTime?
+  createdAt      DateTime        @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId, channel])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+/// Annonce globale affichée dans l'application.
+model Announcement {
+  id               String               @id @default(uuid()) @db.Uuid
+  title            String
+  body             String               @db.Text
+  severity         AnnouncementSeverity @default(INFO)
+  startsAt         DateTime             @default(now())
+  endsAt           DateTime?
+  isActive         Boolean              @default(true)
+  createdByAdminId String?              @db.Uuid
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  createdByAdmin Admin? @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+// ============================================================================
+// DONS, PAIEMENTS, SANS PUBLICITÉ
+// ============================================================================
+
+model Donation {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String?        @db.Uuid
+  /// Montant en plus petite unité de la devise.
+  amountMinor Int
+  currency    String         @db.VarChar(3)
+  status      DonationStatus @default(PENDING)
+  message     String?
+  createdAt   DateTime       @default(now())
+  completedAt DateTime?
+  updatedAt   DateTime       @updatedAt
+
+  user         User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  transactions PaymentTransaction[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+/// Transaction côté prestataire. Aucune donnée bancaire n'est stockée.
+/// verifiedAt n'est renseigné qu'après confirmation serveur (webhook signé / API prestataire).
+model PaymentTransaction {
+  id                    String        @id @default(uuid()) @db.Uuid
+  donationId            String        @db.Uuid
+  /// Code du prestataire (chaîne libre : prestataires encore à valider pour Haïti).
+  provider              String
+  providerTransactionId String
+  status                PaymentStatus @default(PENDING)
+  amountMinor           Int
+  currency              String        @db.VarChar(3)
+  refundedAmountMinor   Int           @default(0)
+  failureReason         String?
+  verifiedAt            DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  donation          Donation           @relation(fields: [donationId], references: [id], onDelete: Restrict)
+  adFreeEntitlement AdFreeEntitlement?
+
+  @@unique([provider, providerTransactionId])
+  @@index([donationId])
+  @@index([status])
+}
+
+/// Journal brut des webhooks : dédoublonnage et traçabilité (confirmations falsifiées/rejouées).
+model PaymentWebhookEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  provider        String
+  eventId         String
+  eventType       String?
+  signatureValid  Boolean
+  payload         Json
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  processingError String?
+
+  @@unique([provider, eventId])
+  @@index([processedAt])
+}
+
+/// Droit « sans publicité ». sourceTransactionId @unique : une transaction n'active
+/// qu'un seul droit (protection contre la double activation). expiresAt nul = permanent.
+model AdFreeEntitlement {
+  id                  String            @id @default(uuid()) @db.Uuid
+  userId              String            @db.Uuid
+  source              EntitlementSource
+  status              EntitlementStatus @default(ACTIVE)
+  activatedAt         DateTime          @default(now())
+  expiresAt           DateTime?
+  revokedAt           DateTime?
+  revokeReason        String?
+  sourceTransactionId String?           @unique @db.Uuid
+  /// Plan par jetons : plan choisi et dépense associée (une dépense = un droit).
+  planId              String?           @db.Uuid
+  tokenTransactionId  String?           @unique @db.Uuid
+  grantedByAdminId    String?           @db.Uuid
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceTransaction PaymentTransaction? @relation(fields: [sourceTransactionId], references: [id], onDelete: Restrict)
+  plan              AdFreePlan?         @relation(fields: [planId], references: [id], onDelete: Restrict)
+  tokenTransaction  TokenTransaction?   @relation(fields: [tokenTransactionId], references: [id], onDelete: Restrict)
+  grantedByAdmin    Admin?              @relation(fields: [grantedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, expiresAt])
+}
+
+// ============================================================================
+// JETONS, PUBLICITÉS RÉCOMPENSÉES, PLANS SANS PUB, CODES PROMO
+// ============================================================================
+
+/// Solde de jetons (1:1 avec User). Toute modification passe par une TokenTransaction,
+/// dans la même transaction SQL, après verrouillage de cette ligne (SELECT ... FOR UPDATE).
+model TokenWallet {
+  userId    String   @id @db.Uuid
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Grand livre des jetons (ajout seulement). idempotencyKey unique : un même événement
+/// (ex. "ssv:<transaction_id>", "promo:<code>:<user>") ne peut créditer qu'une fois.
+model TokenTransaction {
+  id               String      @id @default(uuid()) @db.Uuid
+  userId           String      @db.Uuid
+  /// Positif = crédit, négatif = dépense.
+  delta            Int
+  balanceAfter     Int
+  reason           TokenReason
+  idempotencyKey   String      @unique
+  note             String?
+  createdByAdminId String?     @db.Uuid
+  createdAt        DateTime    @default(now())
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdByAdmin    Admin?             @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  rewardedAdView    RewardedAdView?
+  promoRedemption   PromoRedemption?
+  adFreeEntitlement AdFreeEntitlement?
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+/// Publicité récompensée vérifiée côté serveur (Server-Side Verification AdMob).
+/// admobTransactionId @unique : un rappel rejoué ne crédite pas deux fois.
+/// (userId, rewardDay, slot) @unique : le plafond quotidien est protégé par la base
+/// (slot = 1..limite, choisi par le service) même en cas de requêtes concurrentes.
+model RewardedAdView {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @db.Uuid
+  /// Jour calendaire dans le fuseau configuré (AppSetting "rewarded_ads").
+  rewardDay          DateTime @db.Date
+  slot               Int
+  admobTransactionId String   @unique
+  adUnit             String?
+  rewardAmount       Int
+  tokenTransactionId String   @unique @db.Uuid
+  verifiedAt         DateTime @default(now())
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenTransaction TokenTransaction @relation(fields: [tokenTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, rewardDay, slot])
+  @@index([userId, rewardDay])
+}
+
+/// Catalogue des plans sans pub achetables avec des jetons (modifiable depuis le dashboard).
+model AdFreePlan {
+  id           String   @id @default(uuid()) @db.Uuid
+  code         String   @unique
+  name         String
+  tokenCost    Int
+  durationDays Int
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  entitlements AdFreeEntitlement[]
+}
+
+/// Code promo créé depuis le dashboard admin ; crédite des jetons (15 par défaut).
+/// Un utilisateur ne peut utiliser un même code qu'une fois.
+model PromoCode {
+  id               String    @id @default(uuid()) @db.Uuid
+  /// Normalisé en majuscules par l'API.
+  code             String    @unique
+  tokenAmount      Int       @default(15)
+  /// Nul = illimité.
+  maxRedemptions   Int?
+  redemptionCount  Int       @default(0)
+  startsAt         DateTime?
+  expiresAt        DateTime?
+  isActive         Boolean   @default(true)
+  note             String?
+  createdByAdminId String?   @db.Uuid
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  createdByAdmin Admin?             @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  redemptions    PromoRedemption[]
+}
+
+model PromoRedemption {
+  id                 String   @id @default(uuid()) @db.Uuid
+  promoCodeId        String   @db.Uuid
+  userId             String   @db.Uuid
+  tokenTransactionId String   @unique @db.Uuid
+  createdAt          DateTime @default(now())
+
+  promoCode        PromoCode        @relation(fields: [promoCodeId], references: [id], onDelete: Restrict)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenTransaction TokenTransaction @relation(fields: [tokenTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([promoCodeId, userId])
+  @@index([userId])
+}
+
+/// Configuration centralisée des emplacements publicitaires (désactivables depuis le dashboard).
+model AdPlacement {
+  id                 String   @id @default(uuid()) @db.Uuid
+  key                String   @unique
+  format             AdFormat
+  /// Identifiant d'unité AdMob (non secret, mais propre à l'environnement).
+  admobUnitId        String?
+  isEnabled          Boolean  @default(true)
+  /// Intervalle minimal entre deux affichages (interstitielles, ouverture).
+  minIntervalSeconds Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([format, isEnabled])
+}
+
+// ============================================================================
+// PUBLICATION PROGRAMMÉE, RETRAITS, AUDIT, PARAMÈTRES
+// ============================================================================
+
+/// Tâche de publication programmée, exécutée par le service de tâches du backend
+/// (indépendant du bot). Cible polymorphe : pas de FK, validée par le service.
+/// dedupeKey + prise en charge atomique (PENDING -> PROCESSING) évitent les doublons.
+model ScheduledPublication {
+  id               String              @id @default(uuid()) @db.Uuid
+  targetType       ScheduledTargetType
+  targetId         String              @db.Uuid
+  action           ScheduledAction
+  scheduledFor     DateTime
+  status           ScheduledStatus     @default(PENDING)
+  dedupeKey        String              @unique
+  /// Changements à appliquer (ex. nouvelle affiche principale).
+  payload          Json?
+  adminNote        String?
+  notifyFollowers  Boolean             @default(false)
+  attempts         Int                 @default(0)
+  maxAttempts      Int                 @default(5)
+  lastError        String?
+  lockedAt         DateTime?
+  lockedBy         String?
+  executedAt       DateTime?
+  createdByAdminId String?             @db.Uuid
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  createdByAdmin Admin? @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledFor])
+  @@index([targetType, targetId])
+}
+
+/// Retrait annoncé d'un contenu : avertissement dès noticeStartsAt, retrait à effectiveAt.
+/// Les métadonnées restent (page « Ce contenu a été retiré de l'application. »).
+model ContentWithdrawal {
+  id               String    @id @default(uuid()) @db.Uuid
+  contentId        String    @db.Uuid
+  message          String?   @db.Text
+  noticeStartsAt   DateTime  @default(now())
+  effectiveAt      DateTime
+  executedAt       DateTime?
+  canceledAt       DateTime?
+  createdByAdminId String?   @db.Uuid
+  createdAt        DateTime  @default(now())
+
+  content        Content @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  createdByAdmin Admin?  @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([contentId])
+  @@index([effectiveAt, executedAt])
+}
+
+/// Journal d'audit (admins, bot, système — y compris changements du droit sans pub).
+model AuditLog {
+  id           BigInt      @id @default(autoincrement())
+  occurredAt   DateTime    @default(now())
+  source       AuditSource
+  adminId      String?     @db.Uuid
+  action       String
+  entityType   String
+  entityId     String?
+  oldValues    Json?
+  newValues    Json?
+  result       AuditResult @default(SUCCESS)
+  errorMessage String?
+  ipAddress    String?
+  requestId    String?
+
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([adminId, occurredAt(sort: Desc)])
+  @@index([occurredAt(sort: Desc)])
+}
+
+/// Paramètres modifiables à chaud (pondérations des tendances, publicités actives, ...).
+model AppSetting {
+  key              String   @id
+  value            Json
+  updatedByAdminId String?  @db.Uuid
+  updatedAt        DateTime @updatedAt
+
+  updatedByAdmin Admin? @relation(fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+}
+
+// ============================================================================
+// DEMANDES, SIGNALEMENTS, SANCTIONS
+// ============================================================================
+
+model ContentRequest {
+  id               String        @id @default(uuid()) @db.Uuid
+  userId           String?       @db.Uuid
+  title            String
+  type             ContentType?
+  details          String?       @db.Text
+  status           RequestStatus @default(OPEN)
+  adminResponse    String?
+  handledByAdminId String?       @db.Uuid
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user           User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  handledByAdmin Admin? @relation(fields: [handledByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+}
+
+model Report {
+  id               String       @id @default(uuid()) @db.Uuid
+  type             ReportType
+  status           ReportStatus @default(OPEN)
+  reporterUserId   String?      @db.Uuid
+  reportedUserId   String?      @db.Uuid
+  contentId        String?      @db.Uuid
+  episodeId        String?      @db.Uuid
+  videoAssetId     String?      @db.Uuid
+  message          String?      @db.Text
+  resolutionNote   String?
+  handledByAdminId String?      @db.Uuid
+  createdAt        DateTime     @default(now())
+  resolvedAt       DateTime?
+
+  reporter       User?          @relation("ReportReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  reported       User?          @relation("ReportReported", fields: [reportedUserId], references: [id], onDelete: SetNull)
+  content        Content?       @relation(fields: [contentId], references: [id], onDelete: SetNull)
+  episode        Episode?       @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  videoAsset     VideoAsset?    @relation(fields: [videoAssetId], references: [id], onDelete: SetNull)
+  handledByAdmin Admin?         @relation(fields: [handledByAdminId], references: [id], onDelete: SetNull)
+  sanctions      UserSanction[]
+
+  @@index([status, createdAt])
+  @@index([type, status])
+}
+
+model UserSanction {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @db.Uuid
+  type           SanctionType
+  reason         String       @db.Text
+  reportId       String?      @db.Uuid
+  startsAt       DateTime     @default(now())
+  endsAt         DateTime?
+  revokedAt      DateTime?
+  issuedByAdminId String?     @db.Uuid
+  createdAt      DateTime     @default(now())
+
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  report        Report? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  issuedByAdmin Admin?  @relation(fields: [issuedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, startsAt])
+}

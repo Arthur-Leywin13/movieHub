@@ -1,0 +1,35 @@
+# PostgreSQL local de développement (NON TESTÉ dans l'environnement de création : pas de Docker).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: movieshub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-movieshub_dev}
+      POSTGRES_DB: movieshub
+    ports:
+      - "5432:5432"
+    volumes:
+      - movieshub_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U movieshub -d movieshub"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Serveur Bot API local : seul moyen de recevoir/envoyer des fichiers jusqu'à 2 Go avec le bot
+  # (NON TESTÉ : pas de Docker dans l'environnement de création). Démarrage : docker compose --profile bot up -d
+  # Le bot doit tourner sur la même machine et lire le même volume pour accéder aux fichiers téléchargés.
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    profiles: ["bot"]
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      TELEGRAM_LOCAL: "1"
+    ports:
+      - "8081:8081"
+    volumes:
+      - telegram_bot_api:/var/lib/telegram-bot-api
+volumes:
+  movieshub_pg:
+  telegram_bot_api:

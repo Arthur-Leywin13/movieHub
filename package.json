@@ -1,0 +1,28 @@
+{
+  "name": "movieshub",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MoviesHub — plateforme de films, séries et animés",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "workspaces": [
+    "apps/api",
+    "apps/bot",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run generate -w @movieshub/database",
+    "db:migrate": "npm run migrate:dev -w @movieshub/database",
+    "db:deploy": "npm run migrate:deploy -w @movieshub/database",
+    "db:search": "npm run db:search -w @movieshub/database",
+    "db:seed": "npm run db:seed -w @movieshub/database",
+    "db:setup": "npm run db:setup -w @movieshub/database",
+    "db:check": "npm run check:schema -w @movieshub/database"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

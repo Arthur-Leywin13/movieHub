@@ -1,0 +1,32 @@
+{
+  "name": "@movieshub/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate": "node --env-file-if-exists=../../.env ../../node_modules/prisma/build/index.js generate",
+    "validate": "node --env-file=../../.env ../../node_modules/prisma/build/index.js validate",
+    "migrate:dev": "node --env-file=../../.env ../../node_modules/prisma/build/index.js migrate dev",
+    "migrate:deploy": "node --env-file=../../.env ../../node_modules/prisma/build/index.js migrate deploy",
+    "db:search": "node --env-file=../../.env ../../node_modules/prisma/build/index.js db execute --file ./sql/search_and_constraints.sql --schema ./prisma/schema.prisma",
+    "db:seed": "node --env-file=../../.env ../../node_modules/prisma/build/index.js db seed",
+    "db:setup": "npm run migrate:deploy && npm run db:search && npm run db:seed",
+    "typecheck": "tsc -p tsconfig.json",
+    "check:schema": "node scripts/check-schema.mjs prisma/schema.prisma",
+    "test": "node --test \"scripts/*.test.mjs\""
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "~6.19.0",
+    "@movieshub/shared": "*"
+  },
+  "devDependencies": {
+    "prisma": "~6.19.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0"
+  }
+}
