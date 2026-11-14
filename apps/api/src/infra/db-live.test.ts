@@ -206,5 +206,28 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     assert.equal((await notifications.preferences(recipient.id)).find((p) => p.type === 'MAINTENANCE')?.enabled, false);
   });
 
+  test('PostgreSQL : notification automatique lors d’une publication programmée', async () => {
+    let clock = new Date('2026-11-16T12:00:00.000Z');
+    const scheduler = new ScheduledPublicationService({ prisma, now: () => clock, workerId: `live-notify-scheduler-${tag}` });
+    const notifications = new NotificationService({ prisma });
+    const series = await admin.createContent(ACTOR, { type: 'SERIES', title: `Series notification ${tag}`, year: 2026 }, CTX);
+    await admin.setContentStatus(ACTOR, series.id, 'PUBLISHED', CTX);
+    const season = await admin.createSeason(ACTOR, series.id, { number: 1, releaseDate: '2026-11-16' }, CTX);
+    await admin.setSeasonStatus(ACTOR, season.id, 'PUBLISHED', CTX);
+    const episode = await admin.createEpisode(ACTOR, season.id, { number: 1, title: 'Premier épisode' }, CTX);
+    const follower = await users.create({ email: `live-notify-follower-${tag}@exemple.com`, passwordHash: 'scrypt$x', displayName: 'Follower' });
+    await svc.follow(follower.id, series.id, {});
+    const job = await scheduler.schedule(ACTOR, {
+      targetType: 'EPISODE', targetId: episode.id, action: 'PUBLISH',
+      scheduledFor: new Date(clock.getTime() + 60_000).toISOString(), notifyFollowers: true,
+    }, CTX);
+    clock = new Date(clock.getTime() + 90_000);
+    assert.deepEqual(await scheduler.runOnce(), { claimed: 1, completed: 1, failed: 0 });
+    const inbox = await notifications.listForUser(follower.id, 1, 10);
+    assert.equal(inbox.total, 1);
+    assert.equal(inbox.items[0]?.notification.type, 'NEW_EPISODE');
+    assert.equal(inbox.items[0]?.notification.contentId, series.id);
+    assert.equal((await prisma.scheduledPublication.findUnique({ where: { id: job.id } }))?.status, 'DONE');
+  });
 
 }
