@@ -82,3 +82,18 @@ Tendances : score = consultations x1 + téléchargements x5 + favoris x3 + lectu
 | `GET\|POST\|DELETE /me/search-history` | recherches récentes (50 max, doublons fusionnés) |
 | `POST /versions/:id/download` | lien signé temporaire (15 min par défaut) + nom de fichier + taille + `allowLocalShare` ; refusé si la version, l'épisode, la saison ou le contenu n'est pas publié (410 si retiré) ; 60 par heure et par utilisateur |
 | `POST /downloads/:id/status` | `COMPLETED`, `FAILED` ou `CANCELED` (idempotent ; propriétaire seulement). Le fichier téléchargé reste sur l'appareil : aucune suppression à distance |
+
+
+## Publications programmées (administration)
+
+Authentification : mêmes règles que le catalogue (Bearer pour le dashboard, Bot + identifiant Telegram numérique pour le bot).
+
+| Route | Corps / comportement |
+|---|---|
+| `GET /admin/scheduled-publications?page&limit` | Liste paginée des programmations, de la plus proche à la plus éloignée. |
+| `POST /admin/scheduled-publications` | `{ targetType, targetId, action, scheduledFor, adminNote?, notifyFollowers? }`. La date doit être future. Cibles : CONTENT, SEASON, EPISODE, VIDEO_ASSET, POSTER, TRAILER. Actions : PUBLISH, UNPUBLISH, ARCHIVE. Affiches et bandes-annonces : ARCHIVE uniquement. |
+| `DELETE /admin/scheduled-publications/:id` | Annule uniquement un élément encore PENDING ; un élément déjà pris en charge ne peut pas être annulé. |
+
+Le worker est exécuté par chaque instance API toutes les 5 secondes, indépendamment du bot. Il réclame les échéances avec PostgreSQL `FOR UPDATE SKIP LOCKED`, applique la modification et marque le job DONE dans une même transaction. Les verrous abandonnés sont récupérés après 2 minutes ; les échecs sont réessayés jusqu'au nombre maximal de tentatives (5), puis passent à FAILED. Chaque programmation et exécution est journalisée.
+
+Limite actuelle : `notifyFollowers: true` est refusé tant que le service centralisé de notifications n'est pas intégré. La programmation de retraits annoncés (`ContentWithdrawal`) reste un chantier distinct.
