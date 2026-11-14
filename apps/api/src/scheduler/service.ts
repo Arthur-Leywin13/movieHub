@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PrismaClient, ScheduledAction, ScheduledTargetType } from '@movieshub/database';
+import type { Prisma, PrismaClient, ScheduledAction, ScheduledTargetType } from '@movieshub/database';
 import { ConflictError, NotFoundError, ValidationError } from '@movieshub/shared';
 import type { AdminActor } from '../auth/actor.ts';
 
@@ -28,6 +28,7 @@ interface ClaimedJob {
   attempts: number;
   maxAttempts: number;
   lockedBy: string;
+  notifyFollowers: boolean;
 }
 
 const MAX_NOTE_LENGTH = 1000;
@@ -80,8 +81,8 @@ export class ScheduledPublicationService {
     const scheduledFor = new Date(input.scheduledFor);
     if (!Number.isFinite(scheduledFor.getTime())) throw new ValidationError('Date de programmation invalide', { field: 'scheduledFor' });
     if (scheduledFor.getTime() <= this.now().getTime()) throw new ValidationError('La date de programmation doit être dans le futur', { field: 'scheduledFor' });
-    if (input.notifyFollowers) {
-      throw new ValidationError('Les notifications de publication programmée seront activées avec le service de notifications');
+    if (input.notifyFollowers && (input.action !== 'PUBLISH' || !['EPISODE', 'SEASON', 'VIDEO_ASSET'].includes(input.targetType))) {
+      throw new ValidationError('Les notifications sont disponibles uniquement lors de la publication d’un épisode, d’une saison ou d’une version vidéo', { field: 'notifyFollowers' });
     }
     const adminNote = input.adminNote?.trim() || null;
     if (adminNote && adminNote.length > MAX_NOTE_LENGTH) throw new ValidationError(`La note ne peut pas dépasser ${MAX_NOTE_LENGTH} caractères`);
@@ -96,7 +97,7 @@ export class ScheduledPublicationService {
           scheduledFor,
           dedupeKey: randomUUID(),
           adminNote,
-          notifyFollowers: false,
+          notifyFollowers: input.notifyFollowers ?? false,
           createdByAdminId: actor.adminId,
         },
       });
@@ -165,8 +166,8 @@ export class ScheduledPublicationService {
     });
 
     const jobs = await this.prisma.$transaction(async (tx) => {
-      const due = await tx.$queryRaw<Array<{ id: string; targetType: TargetType; targetId: string; action: Action; attempts: number; maxAttempts: number }>>`
-        SELECT "id", "targetType", "targetId", "action", "attempts", "maxAttempts"
+      const due = await tx.$queryRaw<Array<{ id: string; targetType: TargetType; targetId: string; action: Action; attempts: number; maxAttempts: number; notifyFollowers: boolean }>>`
+        SELECT "id", "targetType", "targetId", "action", "attempts", "maxAttempts", "notifyFollowers"
         FROM "ScheduledPublication"
         WHERE "status" = 'PENDING'::"ScheduledStatus" AND "scheduledFor" <= ${now}
         ORDER BY "scheduledFor" ASC
@@ -227,6 +228,10 @@ export class ScheduledPublicationService {
       }
       if (changed !== 1) throw new ConflictError('La cible a disparu ou ne peut plus recevoir cette programmation');
 
+      if (job.notifyFollowers && job.action === 'PUBLISH') {
+        await this.createFollowerNotification(tx, job, now);
+      }
+
       await tx.scheduledPublication.update({
         where: { id: job.id },
         data: { status: 'DONE', executedAt: now, lockedAt: null, lockedBy: null, lastError: null },
@@ -243,6 +248,76 @@ export class ScheduledPublicationService {
     });
   }
 
+  /** Crée une notification intégrée dans la même transaction que la publication. */
+  private async createFollowerNotification(tx: Prisma.TransactionClient, job: ClaimedJob, now: Date): Promise<void> {
+    let contentId: string | null = null;
+    let type: 'NEW_EPISODE' | 'NEW_SEASON' | 'NEW_LANGUAGE_VERSION';
+    let title: string;
+    let body: string;
+    let followFilter: Record<string, unknown> = {};
+
+    if (job.targetType === 'EPISODE') {
+      const episode = await tx.episode.findUnique({
+        where: { id: job.targetId },
+        select: { number: true, season: { select: { number: true, content: { select: { id: true, title: true } } } } },
+      });
+      if (!episode) throw new NotFoundError('Épisode introuvable pour la notification');
+      contentId = episode.season.content.id;
+      type = 'NEW_EPISODE';
+      title = 'Nouvel épisode disponible';
+      body = episode.season.content.title + ' — saison ' + episode.season.number + ', épisode ' + episode.number;
+      followFilter = { notifyNewEpisodes: true };
+    } else if (job.targetType === 'SEASON') {
+      const season = await tx.season.findUnique({
+        where: { id: job.targetId },
+        select: { number: true, content: { select: { id: true, title: true } } },
+      });
+      if (!season) throw new NotFoundError('Saison introuvable pour la notification');
+      contentId = season.content.id;
+      type = 'NEW_SEASON';
+      title = 'Nouvelle saison disponible';
+      body = season.content.title + ' — saison ' + season.number;
+      followFilter = { notifyNewSeasons: true };
+    } else if (job.targetType === 'VIDEO_ASSET') {
+      const version = await tx.videoAsset.findUnique({
+        where: { id: job.targetId },
+        select: {
+          content: { select: { id: true, title: true } },
+          episode: { select: { season: { select: { content: { select: { id: true, title: true } } } } } },
+        },
+      });
+      const content = version?.content ?? version?.episode?.season.content ?? null;
+      if (!content) throw new NotFoundError('Contenu introuvable pour la notification de version');
+      contentId = content.id;
+      type = 'NEW_LANGUAGE_VERSION';
+      title = 'Nouvelle version disponible';
+      body = 'Une nouvelle version de ' + content.title + ' est disponible.';
+      followFilter = { OR: [{ notifyNewEpisodes: true }, { notifyNewSeasons: true }] };
+    } else {
+      return;
+    }
+
+    const notification = await tx.notification.create({
+      data: { type, status: 'SENDING', audience: 'FOLLOWERS', contentId, title, body, dedupeKey: 'scheduled-publication:' + job.id + ':followers' },
+    });
+    const follows = await tx.follow.findMany({
+      where: { contentId, ...followFilter, user: { status: 'ACTIVE', notificationsEnabled: true } },
+      select: { userId: true },
+    });
+    const userIds = [...new Set(follows.map((follow) => follow.userId))];
+    const disabled = userIds.length ? await tx.notificationPreference.findMany({
+      where: { userId: { in: userIds }, type, enabled: false }, select: { userId: true },
+    }) : [];
+    const disabledIds = new Set(disabled.map((row) => row.userId));
+    const recipients = userIds.filter((id) => !disabledIds.has(id));
+    if (recipients.length) {
+      await tx.notificationDelivery.createMany({
+        data: recipients.map((userId) => ({ notificationId: notification.id, userId, channel: 'IN_APP', status: 'SENT', sentAt: now })),
+        skipDuplicates: true,
+      });
+    }
+    await tx.notification.update({ where: { id: notification.id }, data: { status: 'SENT', sentAt: now } });
+  }
   private async recordFailure(job: ClaimedJob, error: unknown): Promise<void> {
     const message = (error instanceof Error ? error.message : 'Erreur inconnue').slice(0, 1000);
     const retry = job.attempts < job.maxAttempts;
