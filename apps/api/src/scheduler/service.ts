@@ -254,7 +254,7 @@ export class ScheduledPublicationService {
     let type: 'NEW_EPISODE' | 'NEW_SEASON' | 'NEW_LANGUAGE_VERSION';
     let title: string;
     let body: string;
-    let followFilter: Record<string, unknown> = {};
+    let followFilter: Prisma.FollowWhereInput = {};
 
     if (job.targetType === 'EPISODE') {
       const episode = await tx.episode.findUnique({
@@ -301,7 +301,7 @@ export class ScheduledPublicationService {
       data: { type, status: 'SENDING', audience: 'FOLLOWERS', contentId, title, body, dedupeKey: 'scheduled-publication:' + job.id + ':followers' },
     });
     const follows = await tx.follow.findMany({
-      where: { contentId, ...followFilter, user: { status: 'ACTIVE', notificationsEnabled: true } },
+      where: { contentId: contentId as string, ...followFilter, user: { status: 'ACTIVE', notificationsEnabled: true } },
       select: { userId: true },
     });
     const userIds = [...new Set(follows.map((follow) => follow.userId))];
