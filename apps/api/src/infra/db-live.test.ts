@@ -18,6 +18,7 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
   const { CatalogReadService } = await import('../catalog/read-service.ts');
   const { UserDataService } = await import('../user/service.ts');
   const { ScheduledPublicationService } = await import('../scheduler/service.ts');
+  const { NotificationService } = await import('../notifications/service.ts');
   const { FakeR2 } = await import('../testing/fake-r2.ts');
   const { after } = await import('node:test');
   after(() => prisma.$disconnect());
@@ -177,5 +178,33 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     assert.deepEqual([saved?.status, updatedContent?.status, saved?.executedAt !== null], ['DONE', 'UNPUBLISHED', true]);
     assert.deepEqual(await scheduler.runOnce(), { claimed: 0, completed: 0, failed: 0 }, 'un job terminé ne doit jamais être rejoué');
   });
+
+  test('PostgreSQL : notifications — ciblage utilisateur, préférences, boîte de réception et lecture', async () => {
+    const recipient = await users.create({ email: `live-notification-${tag}@exemple.com`, passwordHash: 'scrypt$x', displayName: 'Notification User' });
+    const notifications = new NotificationService({ prisma });
+
+    const campaign = await notifications.createCampaign(ACTOR, {
+      type: 'ACCOUNT', audience: 'USER', targetUserId: recipient.id,
+      title: 'Bienvenue', body: 'Votre compte est prêt.',
+      dedupeKey: `account-welcome:${recipient.id}`,
+    }, CTX);
+    assert.equal(campaign.recipientCount, 1);
+    const inbox = await notifications.listForUser(recipient.id, 1, 10);
+    assert.deepEqual([inbox.total, inbox.unread, inbox.items[0]?.notification.title], [1, 1, 'Bienvenue']);
+
+    const deliveryId = inbox.items[0]?.id;
+    assert.ok(deliveryId);
+    await notifications.markRead(recipient.id, deliveryId);
+    assert.deepEqual((await notifications.listForUser(recipient.id, 1, 10, true)).items, []);
+
+    await notifications.updatePreference(recipient.id, 'MAINTENANCE', false);
+    const suppressed = await notifications.createCampaign(ACTOR, {
+      type: 'MAINTENANCE', audience: 'USER', targetUserId: recipient.id,
+      title: 'Maintenance', body: 'Maintenance planifiée.',
+    }, CTX);
+    assert.equal(suppressed.recipientCount, 0, 'une préférence désactivée doit exclure le destinataire');
+    assert.equal((await notifications.preferences(recipient.id)).find((p) => p.type === 'MAINTENANCE')?.enabled, false);
+  });
+
 
 }
