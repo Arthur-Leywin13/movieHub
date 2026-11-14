@@ -1,5 +1,6 @@
 import { ActorResolver, CATALOG_ROLES, requireRole } from '../auth/actor.ts';
 import type { Router } from '../http/router.ts';
+import { ValidationError } from '@movieshub/shared';
 import type { Handler, HttpRequest } from '../http/types.ts';
 import { asObject, intQuery, oneOf, optStr, str, uuidParam } from '../http/validation.ts';
 import type { NotificationService } from './service.ts';
@@ -40,7 +41,7 @@ export function registerNotificationRoutes(
   on('PATCH', '/me/notification-preferences/:type', async (req) => {
     const b = asObject(req.body);
     const type = oneOf({ type: req.params['type'] }, 'type', TYPES);
-    if (typeof b['enabled'] !== 'boolean') throw new Error('Le champ « enabled » doit être vrai ou faux');
+    if (typeof b['enabled'] !== 'boolean') throw new ValidationError('Le champ « enabled » doit être vrai ou faux', { field: 'enabled' });
     return { status: 200, body: { preference: await service.updatePreference(await userId(req), type, b['enabled']) } };
   });
 
