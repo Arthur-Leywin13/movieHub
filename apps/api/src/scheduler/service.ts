@@ -87,31 +87,33 @@ export class ScheduledPublicationService {
     if (adminNote && adminNote.length > MAX_NOTE_LENGTH) throw new ValidationError(`La note ne peut pas dépasser ${MAX_NOTE_LENGTH} caractères`);
     await this.assertTarget(input.targetType, input.targetId, input.action);
 
-    const job = await this.prisma.scheduledPublication.create({
-      data: {
-        targetType: input.targetType as ScheduledTargetType,
-        targetId: input.targetId,
-        action: input.action as ScheduledAction,
-        scheduledFor,
-        dedupeKey: randomUUID(),
-        adminNote,
-        notifyFollowers: false,
-        createdByAdminId: actor.adminId,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const job = await tx.scheduledPublication.create({
+        data: {
+          targetType: input.targetType as ScheduledTargetType,
+          targetId: input.targetId,
+          action: input.action as ScheduledAction,
+          scheduledFor,
+          dedupeKey: randomUUID(),
+          adminNote,
+          notifyFollowers: false,
+          createdByAdminId: actor.adminId,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          source: actor.via === 'bot' ? 'TELEGRAM_BOT' : 'DASHBOARD',
+          adminId: actor.adminId,
+          action: 'publication.schedule',
+          entityType: 'ScheduledPublication',
+          entityId: job.id,
+          newValues: { targetType: input.targetType, targetId: input.targetId, action: input.action, scheduledFor: scheduledFor.toISOString() },
+          ipAddress: ctx.ip,
+          requestId: ctx.requestId,
+        },
+      });
+      return job;
     });
-    await this.prisma.auditLog.create({
-      data: {
-        source: actor.via === 'bot' ? 'TELEGRAM_BOT' : 'DASHBOARD',
-        adminId: actor.adminId,
-        action: 'publication.schedule',
-        entityType: 'ScheduledPublication',
-        entityId: job.id,
-        newValues: { targetType: input.targetType, targetId: input.targetId, action: input.action, scheduledFor: scheduledFor.toISOString() },
-        ipAddress: ctx.ip,
-        requestId: ctx.requestId,
-      },
-    });
-    return job;
   }
 
   async cancel(actor: AdminActor, id: string, ctx: RequestContext) {
@@ -119,25 +121,27 @@ export class ScheduledPublicationService {
     if (!job) throw new NotFoundError('Programmation introuvable');
     if (job.status !== 'PENDING') throw new ConflictError('Seule une programmation en attente peut être annulée');
 
-    const result = await this.prisma.scheduledPublication.updateMany({
-      where: { id, status: 'PENDING' },
-      data: { status: 'CANCELED' },
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.scheduledPublication.updateMany({
+        where: { id, status: 'PENDING' },
+        data: { status: 'CANCELED' },
+      });
+      if (result.count !== 1) throw new ConflictError('La programmation a déjà été prise en charge');
+      await tx.auditLog.create({
+        data: {
+          source: actor.via === 'bot' ? 'TELEGRAM_BOT' : 'DASHBOARD',
+          adminId: actor.adminId,
+          action: 'publication.cancel',
+          entityType: 'ScheduledPublication',
+          entityId: id,
+          oldValues: { status: job.status },
+          newValues: { status: 'CANCELED' },
+          ipAddress: ctx.ip,
+          requestId: ctx.requestId,
+        },
+      });
+      return { id, status: 'CANCELED' as const };
     });
-    if (result.count !== 1) throw new ConflictError('La programmation a déjà été prise en charge');
-    await this.prisma.auditLog.create({
-      data: {
-        source: actor.via === 'bot' ? 'TELEGRAM_BOT' : 'DASHBOARD',
-        adminId: actor.adminId,
-        action: 'publication.cancel',
-        entityType: 'ScheduledPublication',
-        entityId: id,
-        oldValues: { status: job.status },
-        newValues: { status: 'CANCELED' },
-        ipAddress: ctx.ip,
-        requestId: ctx.requestId,
-      },
-    });
-    return { id, status: 'CANCELED' as const };
   }
 
   async list(page = 1, limit = 20) {
