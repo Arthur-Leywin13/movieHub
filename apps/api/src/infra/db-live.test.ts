@@ -17,6 +17,7 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
   const { CatalogAdminService } = await import('../catalog/admin-service.ts');
   const { CatalogReadService } = await import('../catalog/read-service.ts');
   const { UserDataService } = await import('../user/service.ts');
+  const { ScheduledPublicationService } = await import('../scheduler/service.ts');
   const { FakeR2 } = await import('../testing/fake-r2.ts');
   const { after } = await import('node:test');
   after(() => prisma.$disconnect());
@@ -152,4 +153,29 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     await svc.clearHistory(u.id);
     assert.equal((await svc.history(u.id, { page: 1, limit: 10 })).items.length, 0);
   });
+  test('PostgreSQL : publications programmées — création, annulation et exécution idempotente', async () => {
+    let clock = new Date('2026-11-15T12:00:00.000Z');
+    const scheduler = new ScheduledPublicationService({ prisma, now: () => clock, workerId: `live-scheduler-${tag}` });
+    const job = await scheduler.schedule(ACTOR, {
+      targetType: 'CONTENT', targetId: movieId, action: 'UNPUBLISH',
+      scheduledFor: new Date(clock.getTime() + 60_000).toISOString(),
+      adminNote: 'Test de programmation',
+    }, CTX);
+    assert.equal(job.status, 'PENDING');
+
+    const cancelTarget = await admin.createContent(ACTOR, { type: 'MOVIE', title: `Cancel scheduled ${tag}`, year: 2025 }, CTX);
+    const canceled = await scheduler.schedule(ACTOR, {
+      targetType: 'CONTENT', targetId: cancelTarget.id, action: 'ARCHIVE',
+      scheduledFor: new Date(clock.getTime() + 120_000).toISOString(),
+    }, CTX);
+    assert.deepEqual(await scheduler.cancel(ACTOR, canceled.id, CTX), { id: canceled.id, status: 'CANCELED' });
+
+    clock = new Date(clock.getTime() + 90_000);
+    assert.deepEqual(await scheduler.runOnce(), { claimed: 1, completed: 1, failed: 0 });
+    const saved = await prisma.scheduledPublication.findUnique({ where: { id: job.id } });
+    const updatedContent = await prisma.content.findUnique({ where: { id: movieId } });
+    assert.deepEqual([saved?.status, updatedContent?.status, saved?.executedAt !== null], ['DONE', 'UNPUBLISHED', true]);
+    assert.deepEqual(await scheduler.runOnce(), { claimed: 0, completed: 0, failed: 0 }, 'un job terminé ne doit jamais être rejoué');
+  });
+
 }
