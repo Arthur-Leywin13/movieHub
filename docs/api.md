@@ -82,3 +82,32 @@ Tendances : score = consultations x1 + téléchargements x5 + favoris x3 + lectu
 | `GET\|POST\|DELETE /me/search-history` | recherches récentes (50 max, doublons fusionnés) |
 | `POST /versions/:id/download` | lien signé temporaire (15 min par défaut) + nom de fichier + taille + `allowLocalShare` ; refusé si la version, l'épisode, la saison ou le contenu n'est pas publié (410 si retiré) ; 60 par heure et par utilisateur |
 | `POST /downloads/:id/status` | `COMPLETED`, `FAILED` ou `CANCELED` (idempotent ; propriétaire seulement). Le fichier téléchargé reste sur l'appareil : aucune suppression à distance |
+
+
+## Publications programmées (administration)
+
+Authentification : mêmes règles que le catalogue (Bearer pour le dashboard, Bot + identifiant Telegram numérique pour le bot).
+
+| Route | Corps / comportement |
+|---|---|
+| `GET /admin/scheduled-publications?page&limit` | Liste paginée des programmations, de la plus proche à la plus éloignée. |
+| `POST /admin/scheduled-publications` | `{ targetType, targetId, action, scheduledFor, adminNote?, notifyFollowers? }`. La date doit être future. Cibles : CONTENT, SEASON, EPISODE, VIDEO_ASSET, POSTER, TRAILER. Actions : PUBLISH, UNPUBLISH, ARCHIVE. Affiches et bandes-annonces : ARCHIVE uniquement. |
+| `DELETE /admin/scheduled-publications/:id` | Annule uniquement un élément encore PENDING ; un élément déjà pris en charge ne peut pas être annulé. |
+
+Le worker est exécuté par chaque instance API toutes les 5 secondes, indépendamment du bot. Il réclame les échéances avec PostgreSQL `FOR UPDATE SKIP LOCKED`, applique la modification et marque le job DONE dans une même transaction. Les verrous abandonnés sont récupérés après 2 minutes ; les échecs sont réessayés jusqu'au nombre maximal de tentatives (5), puis passent à FAILED. Chaque programmation et exécution est journalisée.
+
+Lorsqu'une publication programmée d'épisode, de saison ou de version vidéo utilise `notifyFollowers: true`, la notification IN_APP et ses livraisons sont créées dans la même transaction que la publication. Les autres cibles/actions refusent cette option. La programmation de retraits annoncés (`ContentWithdrawal`) reste un chantier distinct.
+
+
+## Notifications (boîte de réception intégrée)
+
+| Route | Corps / comportement |
+|---|---|
+| `GET /me/notifications?page&limit&unreadOnly=true` | Boîte de réception personnelle, paginée ; renvoie aussi le nombre de notifications non lues. |
+| `POST /me/notifications/:id/read` | Marque comme lue une notification appartenant à l'utilisateur connecté. |
+| `POST /me/notifications/read-all` | Marque toutes les notifications intégrées comme lues. |
+| `GET /me/notification-preferences` | Préférences par type ; les types sans ligne enregistrée sont activés par défaut. |
+| `PATCH /me/notification-preferences/:type` `{ enabled }` | Active ou désactive un type de notification. |
+| `POST /admin/notifications` | Envoie une campagne intégrée : `{ type, audience, title, body, contentId?, targetUserId?, data?, dedupeKey? }`. Audiences prises en charge : ALL, FOLLOWERS, USER. Chaque destinataire reçoit une livraison IN_APP unique ; l'envoi et le journal d'audit sont transactionnels. |
+
+Les notifications respectent le réglage global `notificationsEnabled`, les préférences par type et, pour NEW_EPISODE / NEW_SEASON, les options de suivi de chaque série. Le canal actuellement actif est **IN_APP**. Le push FCM, les segments, les campagnes différées et l'interface de gestion des campagnes restent à intégrer.

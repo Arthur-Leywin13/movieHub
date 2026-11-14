@@ -17,6 +17,8 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
   const { CatalogAdminService } = await import('../catalog/admin-service.ts');
   const { CatalogReadService } = await import('../catalog/read-service.ts');
   const { UserDataService } = await import('../user/service.ts');
+  const { ScheduledPublicationService } = await import('../scheduler/service.ts');
+  const { NotificationService } = await import('../notifications/service.ts');
   const { FakeR2 } = await import('../testing/fake-r2.ts');
   const { after } = await import('node:test');
   after(() => prisma.$disconnect());
@@ -152,4 +154,80 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     await svc.clearHistory(u.id);
     assert.equal((await svc.history(u.id, { page: 1, limit: 10 })).items.length, 0);
   });
+  test('PostgreSQL : publications programmées — création, annulation et exécution idempotente', async () => {
+    let clock = new Date('2026-11-15T12:00:00.000Z');
+    const scheduler = new ScheduledPublicationService({ prisma, now: () => clock, workerId: `live-scheduler-${tag}` });
+    const job = await scheduler.schedule(ACTOR, {
+      targetType: 'CONTENT', targetId: movieId, action: 'UNPUBLISH',
+      scheduledFor: new Date(clock.getTime() + 60_000).toISOString(),
+      adminNote: 'Test de programmation',
+    }, CTX);
+    assert.equal(job.status, 'PENDING');
+
+    const cancelTarget = await admin.createContent(ACTOR, { type: 'MOVIE', title: `Cancel scheduled ${tag}`, year: 2025 }, CTX);
+    const canceled = await scheduler.schedule(ACTOR, {
+      targetType: 'CONTENT', targetId: cancelTarget.id, action: 'ARCHIVE',
+      scheduledFor: new Date(clock.getTime() + 120_000).toISOString(),
+    }, CTX);
+    assert.deepEqual(await scheduler.cancel(ACTOR, canceled.id, CTX), { id: canceled.id, status: 'CANCELED' });
+
+    clock = new Date(clock.getTime() + 90_000);
+    assert.deepEqual(await scheduler.runOnce(), { claimed: 1, completed: 1, failed: 0 });
+    const saved = await prisma.scheduledPublication.findUnique({ where: { id: job.id } });
+    const updatedContent = await prisma.content.findUnique({ where: { id: movieId } });
+    assert.deepEqual([saved?.status, updatedContent?.status, saved?.executedAt !== null], ['DONE', 'UNPUBLISHED', true]);
+    assert.deepEqual(await scheduler.runOnce(), { claimed: 0, completed: 0, failed: 0 }, 'un job terminé ne doit jamais être rejoué');
+  });
+
+  test('PostgreSQL : notifications — ciblage utilisateur, préférences, boîte de réception et lecture', async () => {
+    const recipient = await users.create({ email: `live-notification-${tag}@exemple.com`, passwordHash: 'scrypt$x', displayName: 'Notification User' });
+    const notifications = new NotificationService({ prisma });
+
+    const campaign = await notifications.createCampaign(ACTOR, {
+      type: 'ACCOUNT', audience: 'USER', targetUserId: recipient.id,
+      title: 'Bienvenue', body: 'Votre compte est prêt.',
+      dedupeKey: `account-welcome:${recipient.id}`,
+    }, CTX);
+    assert.equal(campaign.recipientCount, 1);
+    const inbox = await notifications.listForUser(recipient.id, 1, 10);
+    assert.deepEqual([inbox.total, inbox.unread, inbox.items[0]?.notification.title], [1, 1, 'Bienvenue']);
+
+    const deliveryId = inbox.items[0]?.id;
+    assert.ok(deliveryId);
+    await notifications.markRead(recipient.id, deliveryId);
+    assert.deepEqual((await notifications.listForUser(recipient.id, 1, 10, true)).items, []);
+
+    await notifications.updatePreference(recipient.id, 'MAINTENANCE', false);
+    const suppressed = await notifications.createCampaign(ACTOR, {
+      type: 'MAINTENANCE', audience: 'USER', targetUserId: recipient.id,
+      title: 'Maintenance', body: 'Maintenance planifiée.',
+    }, CTX);
+    assert.equal(suppressed.recipientCount, 0, 'une préférence désactivée doit exclure le destinataire');
+    assert.equal((await notifications.preferences(recipient.id)).find((p) => p.type === 'MAINTENANCE')?.enabled, false);
+  });
+
+  test('PostgreSQL : notification automatique lors d’une publication programmée', async () => {
+    let clock = new Date('2026-11-16T12:00:00.000Z');
+    const scheduler = new ScheduledPublicationService({ prisma, now: () => clock, workerId: `live-notify-scheduler-${tag}` });
+    const notifications = new NotificationService({ prisma });
+    const series = await admin.createContent(ACTOR, { type: 'SERIES', title: `Series notification ${tag}`, year: 2026 }, CTX);
+    await admin.setContentStatus(ACTOR, series.id, 'PUBLISHED', CTX);
+    const season = await admin.createSeason(ACTOR, series.id, { number: 1, releaseDate: '2026-11-16' }, CTX);
+    await admin.setSeasonStatus(ACTOR, season.id, 'PUBLISHED', CTX);
+    const episode = await admin.createEpisode(ACTOR, season.id, { number: 1, title: 'Premier épisode' }, CTX);
+    const follower = await users.create({ email: `live-notify-follower-${tag}@exemple.com`, passwordHash: 'scrypt$x', displayName: 'Follower' });
+    await svc.follow(follower.id, series.id, {});
+    const job = await scheduler.schedule(ACTOR, {
+      targetType: 'EPISODE', targetId: episode.id, action: 'PUBLISH',
+      scheduledFor: new Date(clock.getTime() + 60_000).toISOString(), notifyFollowers: true,
+    }, CTX);
+    clock = new Date(clock.getTime() + 90_000);
+    assert.deepEqual(await scheduler.runOnce(), { claimed: 1, completed: 1, failed: 0 });
+    const inbox = await notifications.listForUser(follower.id, 1, 10);
+    assert.equal(inbox.total, 1);
+    assert.equal(inbox.items[0]?.notification.type, 'NEW_EPISODE');
+    assert.equal(inbox.items[0]?.notification.contentId, series.id);
+    assert.equal((await prisma.scheduledPublication.findUnique({ where: { id: job.id } }))?.status, 'DONE');
+  });
+
 }
