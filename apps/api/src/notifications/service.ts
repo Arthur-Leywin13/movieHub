@@ -1,5 +1,5 @@
 import { ConflictError, NotFoundError, ValidationError } from '@movieshub/shared';
-import { Prisma, type PrismaClient, type NotificationType } from '@prisma/client';
+import type { Prisma, PrismaClient, NotificationType } from '@prisma/client';
 import type { AdminActor } from '../auth/actor.ts';
 
 const TYPES = [
