@@ -19,6 +19,7 @@ import { PrismaCatalogRepo } from './infra/prisma-catalog-repo.ts';
 import { PrismaUserDataRepo } from './infra/prisma-user-data-repo.ts';
 import { UserDataService } from './user/service.ts';
 import { ScheduledPublicationService } from './scheduler/service.ts';
+import { NotificationService } from './notifications/service.ts';
 
 async function main(): Promise<void> {
   let env;
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
   const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: r2, stats: userDataRepo });
   const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: r2, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
   const scheduledPublications = new ScheduledPublicationService({ prisma });
+  const notifications = new NotificationService({ prisma });
 
   const router = buildApp({
     auth,
@@ -68,6 +70,7 @@ async function main(): Promise<void> {
     catalogRead,
     userData,
     scheduledPublications,
+    notifications,
     checkReady: async () => {
       await prisma.$queryRaw`SELECT 1`;
       return true;
