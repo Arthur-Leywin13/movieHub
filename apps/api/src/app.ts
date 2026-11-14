@@ -10,6 +10,8 @@ import type { CatalogReadService } from './catalog/read-service.ts';
 import { registerCatalogRoutes } from './catalog/routes.ts';
 import type { UserDataService } from './user/service.ts';
 import { registerUserRoutes } from './user/routes.ts';
+import type { ScheduledPublicationService } from './scheduler/service.ts';
+import { registerScheduledPublicationRoutes } from './scheduler/routes.ts';
 
 export interface AppDeps {
   auth: AuthService;
@@ -19,6 +21,8 @@ export interface AppDeps {
   catalogRead: CatalogReadService;
   /** Favoris, suivi, historique, téléchargements : routes « /me » et téléchargements, absentes si non fourni. */
   userData?: UserDataService;
+  /** File de publications programmées, partagée entre dashboard et bot. */
+  scheduledPublications?: ScheduledPublicationService;
   /** Vérifie la base de données (route /health/ready). */
   checkReady?: () => Promise<boolean>;
 }
@@ -119,6 +123,7 @@ export function buildApp(deps: AppDeps): Router {
     ...(userData ? { onView: (id: string) => void userData.recordView(id) } : {}),
   });
   if (userData) registerUserRoutes(router, { users: userData, actors: deps.actors });
+  if (deps.scheduledPublications) registerScheduledPublicationRoutes(router, { service: deps.scheduledPublications, actors: deps.actors });
 
   return router;
 }
