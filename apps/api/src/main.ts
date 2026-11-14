@@ -18,6 +18,7 @@ import { CatalogReadService } from './catalog/read-service.ts';
 import { PrismaCatalogRepo } from './infra/prisma-catalog-repo.ts';
 import { PrismaUserDataRepo } from './infra/prisma-user-data-repo.ts';
 import { UserDataService } from './user/service.ts';
+import { ScheduledPublicationService } from './scheduler/service.ts';
 
 async function main(): Promise<void> {
   let env;
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
   const userDataRepo = new PrismaUserDataRepo(prisma);
   const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: r2, stats: userDataRepo });
   const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: r2, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
+  const scheduledPublications = new ScheduledPublicationService({ prisma });
 
   const router = buildApp({
     auth,
@@ -65,6 +67,7 @@ async function main(): Promise<void> {
     catalogAdmin,
     catalogRead,
     userData,
+    scheduledPublications,
     checkReady: async () => {
       await prisma.$queryRaw`SELECT 1`;
       return true;
@@ -73,8 +76,27 @@ async function main(): Promise<void> {
   const server = createHttpServer({ router, logger: consoleLogger, trustProxy: env.trustProxy, corsOrigins: env.corsOrigins });
   server.listen(env.port, () => consoleLogger.info('API démarrée', { port: env.port, env: env.nodeEnv }));
 
+  // Le scheduler appartient au backend, jamais au bot Telegram. Le verrou SQL
+  // SKIP LOCKED permet plusieurs instances API sans double exécution.
+  let schedulerRunning = false;
+  const runScheduler = async (): Promise<void> => {
+    if (schedulerRunning) return;
+    schedulerRunning = true;
+    try {
+      const result = await scheduledPublications.runOnce();
+      if (result.claimed > 0) consoleLogger.info('Publications programmées traitées', result);
+    } catch (error) {
+      consoleLogger.error('Échec du cycle des publications programmées', { error: error instanceof Error ? error.message : 'Erreur inconnue' });
+    } finally {
+      schedulerRunning = false;
+    }
+  };
+  const schedulerTimer = setInterval(() => void runScheduler(), 5_000);
+  void runScheduler();
+
   const shutdown = (signal: string): void => {
     consoleLogger.info('Arrêt demandé', { signal });
+    clearInterval(schedulerTimer);
     server.close(() => {
       void prisma.$disconnect().finally(() => process.exit(0));
     });
