@@ -1,5 +1,5 @@
 import { ConflictError, NotFoundError, ValidationError } from '@movieshub/shared';
-import type { PrismaClient, NotificationType } from '@prisma/client';
+import { Prisma, type PrismaClient, type NotificationType } from '@prisma/client';
 import type { AdminActor } from '../auth/actor.ts';
 
 const TYPES = [
@@ -58,7 +58,7 @@ export class NotificationService {
             contentId: input.contentId ?? null,
             title: input.title.trim(),
             body: input.body.trim(),
-            data: input.data as never ?? undefined,
+            data: input.data ? (input.data as Prisma.InputJsonValue) : undefined,
             dedupeKey: input.dedupeKey ?? null,
             createdByAdminId: actor.adminId,
           },
