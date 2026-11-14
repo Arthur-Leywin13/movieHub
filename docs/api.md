@@ -96,7 +96,7 @@ Authentification : mêmes règles que le catalogue (Bearer pour le dashboard, Bo
 
 Le worker est exécuté par chaque instance API toutes les 5 secondes, indépendamment du bot. Il réclame les échéances avec PostgreSQL `FOR UPDATE SKIP LOCKED`, applique la modification et marque le job DONE dans une même transaction. Les verrous abandonnés sont récupérés après 2 minutes ; les échecs sont réessayés jusqu'au nombre maximal de tentatives (5), puis passent à FAILED. Chaque programmation et exécution est journalisée.
 
-Limite actuelle : `notifyFollowers: true` est refusé tant que le service centralisé de notifications n'est pas intégré. La programmation de retraits annoncés (`ContentWithdrawal`) reste un chantier distinct.
+Lorsqu'une publication programmée d'épisode, de saison ou de version vidéo utilise `notifyFollowers: true`, la notification IN_APP et ses livraisons sont créées dans la même transaction que la publication. Les autres cibles/actions refusent cette option. La programmation de retraits annoncés (`ContentWithdrawal`) reste un chantier distinct.
 
 
 ## Notifications (boîte de réception intégrée)
