@@ -97,3 +97,17 @@ Authentification : mêmes règles que le catalogue (Bearer pour le dashboard, Bo
 Le worker est exécuté par chaque instance API toutes les 5 secondes, indépendamment du bot. Il réclame les échéances avec PostgreSQL `FOR UPDATE SKIP LOCKED`, applique la modification et marque le job DONE dans une même transaction. Les verrous abandonnés sont récupérés après 2 minutes ; les échecs sont réessayés jusqu'au nombre maximal de tentatives (5), puis passent à FAILED. Chaque programmation et exécution est journalisée.
 
 Limite actuelle : `notifyFollowers: true` est refusé tant que le service centralisé de notifications n'est pas intégré. La programmation de retraits annoncés (`ContentWithdrawal`) reste un chantier distinct.
+
+
+## Notifications (boîte de réception intégrée)
+
+| Route | Corps / comportement |
+|---|---|
+| `GET /me/notifications?page&limit&unreadOnly=true` | Boîte de réception personnelle, paginée ; renvoie aussi le nombre de notifications non lues. |
+| `POST /me/notifications/:id/read` | Marque comme lue une notification appartenant à l'utilisateur connecté. |
+| `POST /me/notifications/read-all` | Marque toutes les notifications intégrées comme lues. |
+| `GET /me/notification-preferences` | Préférences par type ; les types sans ligne enregistrée sont activés par défaut. |
+| `PATCH /me/notification-preferences/:type` `{ enabled }` | Active ou désactive un type de notification. |
+| `POST /admin/notifications` | Envoie une campagne intégrée : `{ type, audience, title, body, contentId?, targetUserId?, data?, dedupeKey? }`. Audiences prises en charge : ALL, FOLLOWERS, USER. Chaque destinataire reçoit une livraison IN_APP unique ; l'envoi et le journal d'audit sont transactionnels. |
+
+Les notifications respectent le réglage global `notificationsEnabled`, les préférences par type et, pour NEW_EPISODE / NEW_SEASON, les options de suivi de chaque série. Le canal actuellement actif est **IN_APP**. Le push FCM, les segments, les campagnes différées et l'interface de gestion des campagnes restent à intégrer.
