@@ -50,6 +50,7 @@ export function registerNotificationRoutes(
     requireRole(actor, CATALOG_ROLES);
     const b = asObject(req.body);
     const data = b['data'] === undefined || b['data'] === null ? undefined : asObject(b['data']);
+    const dedupeKey = optStr(b, 'dedupeKey', { max: 200 });
     return {
       status: 201,
       body: await service.createCampaign(actor, {
@@ -60,7 +61,7 @@ export function registerNotificationRoutes(
         ...(b['contentId'] !== undefined ? { contentId: uuidParam(typeof b['contentId'] === 'string' ? b['contentId'] : undefined, 'contentId') } : {}),
         ...(b['targetUserId'] !== undefined ? { targetUserId: uuidParam(typeof b['targetUserId'] === 'string' ? b['targetUserId'] : undefined, 'targetUserId') } : {}),
         ...(data ? { data } : {}),
-        ...(optStr(b, 'dedupeKey', { max: 200 }) ? { dedupeKey: optStr(b, 'dedupeKey', { max: 200 }) as string } : {}),
+        ...(dedupeKey ? { dedupeKey } : {}),
       }, { ip: req.ip, requestId: req.requestId }),
     };
   });
