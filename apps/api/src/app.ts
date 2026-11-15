@@ -14,6 +14,8 @@ import type { ScheduledPublicationService } from './scheduler/service.ts';
 import { registerScheduledPublicationRoutes } from './scheduler/routes.ts';
 import type { NotificationService } from './notifications/service.ts';
 import { registerNotificationRoutes } from './notifications/routes.ts';
+import type { ContentWithdrawalService } from './withdrawals/service.ts';
+import { registerContentWithdrawalRoutes } from './withdrawals/routes.ts';
 
 export interface AppDeps {
   auth: AuthService;
@@ -27,6 +29,8 @@ export interface AppDeps {
   scheduledPublications?: ScheduledPublicationService;
   /** Notifications internes et campagnes administrateur. */
   notifications?: NotificationService;
+  /** Retraits de contenus annoncés et exécutés automatiquement. */
+  contentWithdrawals?: ContentWithdrawalService;
   /** Vérifie la base de données (route /health/ready). */
   checkReady?: () => Promise<boolean>;
 }
@@ -129,6 +133,7 @@ export function buildApp(deps: AppDeps): Router {
   if (userData) registerUserRoutes(router, { users: userData, actors: deps.actors });
   if (deps.scheduledPublications) registerScheduledPublicationRoutes(router, { service: deps.scheduledPublications, actors: deps.actors });
   if (deps.notifications) registerNotificationRoutes(router, { service: deps.notifications, actors: deps.actors });
+  if (deps.contentWithdrawals) registerContentWithdrawalRoutes(router, { service: deps.contentWithdrawals, actors: deps.actors });
 
   return router;
 }

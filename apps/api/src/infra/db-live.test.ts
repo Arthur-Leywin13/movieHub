@@ -19,6 +19,7 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
   const { UserDataService } = await import('../user/service.ts');
   const { ScheduledPublicationService } = await import('../scheduler/service.ts');
   const { NotificationService } = await import('../notifications/service.ts');
+  const { ContentWithdrawalService } = await import('../withdrawals/service.ts');
   const { FakeR2 } = await import('../testing/fake-r2.ts');
   const { after } = await import('node:test');
   after(() => prisma.$disconnect());
@@ -228,6 +229,35 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     assert.equal(inbox.items[0]?.notification.type, 'NEW_EPISODE');
     assert.equal(inbox.items[0]?.notification.contentId, series.id);
     assert.equal((await prisma.scheduledPublication.findUnique({ where: { id: job.id } }))?.status, 'DONE');
+  });
+  test('PostgreSQL : retrait annoncé — notification des abonnés, retrait effectif et annulation', async () => {
+    let clock = new Date('2026-11-17T10:00:00.000Z');
+    const withdrawals = new ContentWithdrawalService({ prisma, now: () => clock });
+    const notifications = new NotificationService({ prisma });
+    const series = await admin.createContent(ACTOR, { type: 'SERIES', title: `Withdrawal ${tag}`, year: 2026 }, CTX);
+    await admin.setContentStatus(ACTOR, series.id, 'PUBLISHED', CTX);
+    const follower = await users.create({ email: `live-withdrawal-follower-${tag}@exemple.com`, passwordHash: 'scrypt$x', displayName: 'Withdrawal Follower' });
+    await svc.follow(follower.id, series.id, {});
+    const withdrawal = await withdrawals.schedule(ACTOR, {
+      contentId: series.id, noticeStartsAt: '2026-11-17T10:05:00.000Z',
+      effectiveAt: '2026-11-17T10:10:00.000Z', message: 'Ce film quitte bientôt le catalogue.',
+    }, CTX);
+    clock = new Date('2026-11-17T10:06:00.000Z');
+    assert.deepEqual(await withdrawals.runOnce(), { notices: 1, withdrawn: 0, failed: 0 });
+    const inbox = await notifications.listForUser(follower.id, 1, 10);
+    assert.equal(inbox.items[0]?.notification.type, 'CONTENT_WITHDRAWAL');
+    assert.equal(inbox.items[0]?.notification.contentId, series.id);
+    clock = new Date('2026-11-17T10:11:00.000Z');
+    assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 1, failed: 0 });
+    assert.equal((await prisma.content.findUnique({ where: { id: movie.id } }))?.status, 'WITHDRAWN');
+    assert.ok((await prisma.contentWithdrawal.findUnique({ where: { id: withdrawal.id } }))?.executedAt);
+
+    const second = await admin.createContent(ACTOR, { type: 'MOVIE', title: `Withdrawal canceled ${tag}`, year: 2026 }, CTX);
+    const canceled = await withdrawals.schedule(ACTOR, { contentId: second.id, noticeStartsAt: '2026-11-17T10:12:00.000Z', effectiveAt: '2026-11-17T10:15:00.000Z' }, CTX);
+    await withdrawals.cancel(ACTOR, canceled.id, CTX);
+    clock = new Date('2026-11-17T10:20:00.000Z');
+    assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 0, failed: 0 });
+    assert.equal((await prisma.content.findUnique({ where: { id: second.id } }))?.status, 'DRAFT');
   });
 
 }

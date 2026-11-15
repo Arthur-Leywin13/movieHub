@@ -111,3 +111,13 @@ Lorsqu'une publication programmée d'épisode, de saison ou de version vidéo ut
 | `POST /admin/notifications` | Envoie une campagne intégrée : `{ type, audience, title, body, contentId?, targetUserId?, data?, dedupeKey? }`. Audiences prises en charge : ALL, FOLLOWERS, USER. Chaque destinataire reçoit une livraison IN_APP unique ; l'envoi et le journal d'audit sont transactionnels. |
 
 Les notifications respectent le réglage global `notificationsEnabled`, les préférences par type et, pour NEW_EPISODE / NEW_SEASON, les options de suivi de chaque série. Le canal actuellement actif est **IN_APP**. Le push FCM, les segments, les campagnes différées et l'interface de gestion des campagnes restent à intégrer.
+
+## Retraits de contenus annoncés
+
+| Route | Corps / comportement |
+|---|---|
+| `GET /admin/content-withdrawals?page&limit` | Liste paginée des retraits annoncés, avec les informations de base du contenu. |
+| `POST /admin/content-withdrawals` | `{ contentId, noticeStartsAt, effectiveAt, message? }`. Les deux dates doivent être futures et `effectiveAt` doit être après `noticeStartsAt`. Un seul retrait actif par contenu. |
+| `DELETE /admin/content-withdrawals/:id` | Annule un retrait qui n'a pas encore été exécuté. |
+
+Le worker backend vérifie les retraits toutes les 5 secondes. À `noticeStartsAt`, une notification intégrée est envoyée aux abonnés actifs qui acceptent ce type de notification. À `effectiveAt`, le contenu passe à `WITHDRAWN` ; ses métadonnées restent conservées afin d'afficher une page de retrait. L'annonce est dédoublonnée par clé unique et le retrait effectif, son horodatage et son audit sont transactionnels. Les retraits annulés ne sont plus traités.
