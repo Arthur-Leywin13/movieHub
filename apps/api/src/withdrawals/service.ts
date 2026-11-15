@@ -21,6 +21,8 @@ export class ContentWithdrawalService {
     const message = input.message?.trim() || null;
     if (message && message.length > 2000) throw new ValidationError('Le message ne peut pas dépasser 2 000 caractères', { field: 'message' });
     return this.prisma.$transaction(async (tx) => {
+      const lockedContent = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Content" WHERE "id" = ${input.contentId}::uuid FOR UPDATE`;
+      if (lockedContent.length === 0) throw new NotFoundError('Contenu introuvable');
       const content = await tx.content.findUnique({ where: { id: input.contentId }, select: { id: true, title: true, status: true } });
       if (!content) throw new NotFoundError('Contenu introuvable');
       if (content.status === 'WITHDRAWN' || content.status === 'ARCHIVED') throw new ConflictError('Ce contenu est déjà retiré ou archivé');
@@ -56,17 +58,19 @@ export class ContentWithdrawalService {
   }
 
   /** Cycle idempotent : dédoublonnage de l’annonce via Notification.dedupeKey. */
-  async runOnce(batchSize = 25): Promise<{ notices: number; withdrawn: number }> {
+  async runOnce(batchSize = 25): Promise<{ notices: number; withdrawn: number; failed: number }> {
     const now = this.now();
     const due = await this.prisma.contentWithdrawal.findMany({
       where: { canceledAt: null, executedAt: null, OR: [{ noticeStartsAt: { lte: now } }, { effectiveAt: { lte: now } }] },
       orderBy: [{ effectiveAt: 'asc' }, { noticeStartsAt: 'asc' }], take: batchSize,
       include: { content: { select: { id: true, title: true, status: true } } },
     });
-    let notices = 0; let withdrawn = 0;
+    let notices = 0; let withdrawn = 0; let failed = 0;
     for (const item of due) {
       try {
         const result = await this.prisma.$transaction(async (tx) => {
+          const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "ContentWithdrawal" WHERE "id" = ${item.id}::uuid AND "canceledAt" IS NULL AND "executedAt" IS NULL FOR UPDATE SKIP LOCKED`;
+          if (locked.length === 0) return { notice: false, withdrawn: false };
           const current = await tx.contentWithdrawal.findUnique({ where: { id: item.id }, include: { content: { select: { id: true, title: true, status: true } } } });
           if (!current || current.canceledAt || current.executedAt) return { notice: false, withdrawn: false };
           let notice = false;
@@ -98,8 +102,9 @@ export class ContentWithdrawalService {
         if (result.notice) notices++; if (result.withdrawn) withdrawn++;
       } catch {
         // Le prochain cycle retentera ; aucune ligne n'est marquée comme exécutée avant la transaction.
+        failed++;
       }
     }
-    return { notices, withdrawn };
+    return { notices, withdrawn, failed };
   }
 }
