@@ -243,12 +243,12 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
       effectiveAt: '2026-11-17T10:10:00.000Z', message: 'Ce film quitte bientôt le catalogue.',
     }, CTX);
     clock = new Date('2026-11-17T10:06:00.000Z');
-    assert.deepEqual(await withdrawals.runOnce(), { notices: 1, withdrawn: 0 });
+    assert.deepEqual(await withdrawals.runOnce(), { notices: 1, withdrawn: 0, failed: 0 });
     const inbox = await notifications.listForUser(follower.id, 1, 10);
     assert.equal(inbox.items[0]?.notification.type, 'CONTENT_WITHDRAWAL');
     assert.equal(inbox.items[0]?.notification.contentId, movie.id);
     clock = new Date('2026-11-17T10:11:00.000Z');
-    assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 1 });
+    assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 1, failed: 0 });
     assert.equal((await prisma.content.findUnique({ where: { id: movie.id } }))?.status, 'WITHDRAWN');
     assert.ok((await prisma.contentWithdrawal.findUnique({ where: { id: withdrawal.id } }))?.executedAt);
 
@@ -256,7 +256,7 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     const canceled = await withdrawals.schedule(ACTOR, { contentId: second.id, noticeStartsAt: '2026-11-17T10:12:00.000Z', effectiveAt: '2026-11-17T10:15:00.000Z' }, CTX);
     await withdrawals.cancel(ACTOR, canceled.id, CTX);
     clock = new Date('2026-11-17T10:20:00.000Z');
-    assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 0 });
+    assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 0, failed: 0 });
     assert.equal((await prisma.content.findUnique({ where: { id: second.id } }))?.status, 'DRAFT');
   });
 
