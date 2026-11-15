@@ -106,7 +106,7 @@ async function main(): Promise<void> {
     withdrawalsRunning = true;
     try {
       const result = await contentWithdrawals.runOnce();
-      if (result.notices > 0 || result.withdrawn > 0) consoleLogger.info('Retraits de contenus traités', result);
+      if (result.notices > 0 || result.withdrawn > 0 || result.failed > 0) consoleLogger.info('Retraits de contenus traités', result);
     } catch (error) {
       consoleLogger.error('Échec du cycle des retraits programmés', { error: error instanceof Error ? error.message : 'Erreur inconnue' });
     } finally {
