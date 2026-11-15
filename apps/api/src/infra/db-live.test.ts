@@ -249,7 +249,7 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     assert.equal(inbox.items[0]?.notification.contentId, series.id);
     clock = new Date('2026-11-17T10:11:00.000Z');
     assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 1, failed: 0 });
-    assert.equal((await prisma.content.findUnique({ where: { id: movie.id } }))?.status, 'WITHDRAWN');
+    assert.equal((await prisma.content.findUnique({ where: { id: series.id } }))?.status, 'WITHDRAWN');
     assert.ok((await prisma.contentWithdrawal.findUnique({ where: { id: withdrawal.id } }))?.executedAt);
 
     const second = await admin.createContent(ACTOR, { type: 'MOVIE', title: `Withdrawal canceled ${tag}`, year: 2026 }, CTX);
