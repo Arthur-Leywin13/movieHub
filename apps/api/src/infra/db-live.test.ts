@@ -234,19 +234,19 @@ if (process.env['DB_LIVE_TEST'] !== '1') {
     let clock = new Date('2026-11-17T10:00:00.000Z');
     const withdrawals = new ContentWithdrawalService({ prisma, now: () => clock });
     const notifications = new NotificationService({ prisma });
-    const movie = await admin.createContent(ACTOR, { type: 'MOVIE', title: `Withdrawal ${tag}`, year: 2026 }, CTX);
-    await admin.setContentStatus(ACTOR, movie.id, 'PUBLISHED', CTX);
+    const series = await admin.createContent(ACTOR, { type: 'SERIES', title: `Withdrawal ${tag}`, year: 2026 }, CTX);
+    await admin.setContentStatus(ACTOR, series.id, 'PUBLISHED', CTX);
     const follower = await users.create({ email: `live-withdrawal-follower-${tag}@exemple.com`, passwordHash: 'scrypt$x', displayName: 'Withdrawal Follower' });
-    await svc.follow(follower.id, movie.id, {});
+    await svc.follow(follower.id, series.id, {});
     const withdrawal = await withdrawals.schedule(ACTOR, {
-      contentId: movie.id, noticeStartsAt: '2026-11-17T10:05:00.000Z',
+      contentId: series.id, noticeStartsAt: '2026-11-17T10:05:00.000Z',
       effectiveAt: '2026-11-17T10:10:00.000Z', message: 'Ce film quitte bientôt le catalogue.',
     }, CTX);
     clock = new Date('2026-11-17T10:06:00.000Z');
     assert.deepEqual(await withdrawals.runOnce(), { notices: 1, withdrawn: 0, failed: 0 });
     const inbox = await notifications.listForUser(follower.id, 1, 10);
     assert.equal(inbox.items[0]?.notification.type, 'CONTENT_WITHDRAWAL');
-    assert.equal(inbox.items[0]?.notification.contentId, movie.id);
+    assert.equal(inbox.items[0]?.notification.contentId, series.id);
     clock = new Date('2026-11-17T10:11:00.000Z');
     assert.deepEqual(await withdrawals.runOnce(), { notices: 0, withdrawn: 1, failed: 0 });
     assert.equal((await prisma.content.findUnique({ where: { id: movie.id } }))?.status, 'WITHDRAWN');
