@@ -20,6 +20,7 @@ import { PrismaUserDataRepo } from './infra/prisma-user-data-repo.ts';
 import { UserDataService } from './user/service.ts';
 import { ScheduledPublicationService } from './scheduler/service.ts';
 import { NotificationService } from './notifications/service.ts';
+import { ContentWithdrawalService } from './withdrawals/service.ts';
 
 async function main(): Promise<void> {
   let env;
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
   const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: r2, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
   const scheduledPublications = new ScheduledPublicationService({ prisma });
   const notifications = new NotificationService({ prisma });
+  const contentWithdrawals = new ContentWithdrawalService({ prisma });
 
   const router = buildApp({
     auth,
@@ -71,6 +73,7 @@ async function main(): Promise<void> {
     userData,
     scheduledPublications,
     notifications,
+    contentWithdrawals,
     checkReady: async () => {
       await prisma.$queryRaw`SELECT 1`;
       return true;
@@ -82,6 +85,7 @@ async function main(): Promise<void> {
   // Le scheduler appartient au backend, jamais au bot Telegram. Le verrou SQL
   // SKIP LOCKED permet plusieurs instances API sans double exécution.
   let schedulerRunning = false;
+  let withdrawalsRunning = false;
   const runScheduler = async (): Promise<void> => {
     if (schedulerRunning) return;
     schedulerRunning = true;
@@ -97,9 +101,25 @@ async function main(): Promise<void> {
   const schedulerTimer = setInterval(() => void runScheduler(), 5_000);
   void runScheduler();
 
+  const runWithdrawals = async (): Promise<void> => {
+    if (withdrawalsRunning) return;
+    withdrawalsRunning = true;
+    try {
+      const result = await contentWithdrawals.runOnce();
+      if (result.notices > 0 || result.withdrawn > 0) consoleLogger.info('Retraits de contenus traités', result);
+    } catch (error) {
+      consoleLogger.error('Échec du cycle des retraits programmés', { error: error instanceof Error ? error.message : 'Erreur inconnue' });
+    } finally {
+      withdrawalsRunning = false;
+    }
+  };
+  const withdrawalsTimer = setInterval(() => void runWithdrawals(), 5_000);
+  void runWithdrawals();
+
   const shutdown = (signal: string): void => {
     consoleLogger.info('Arrêt demandé', { signal });
     clearInterval(schedulerTimer);
+    clearInterval(withdrawalsTimer);
     server.close(() => {
       void prisma.$disconnect().finally(() => process.exit(0));
     });
