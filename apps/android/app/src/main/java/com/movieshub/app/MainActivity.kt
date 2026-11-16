@@ -3,7 +3,9 @@ package com.movieshub.app
 import android.os.Bundle
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -24,6 +26,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -56,7 +59,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS, SHARE, PROFILE }
+private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS, PROFILE, SETTINGS }
 
 private data class MediaItem(
     val id: String,
@@ -152,6 +155,21 @@ private object MoviesHubApi {
 @Composable
 private fun MoviesHubApp() {
     var screen by remember { mutableStateOf(Screen.HOME) }
+    val backStack = remember { mutableStateListOf<Screen>() }
+    val navigate: (Screen) -> Unit = { destination ->
+        if (destination != screen) { backStack.add(screen); screen = destination }
+    }
+    val goBack: () -> Unit = {
+        screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.HOME
+    }
+    BackHandler(enabled = !splash && screen != Screen.HOME) { goBack() }
+    val context = LocalContext.current
+    var themeMode by remember {
+        mutableStateOf(context.getSharedPreferences("moviehub_preferences", 0).getString("theme", "Sombre") ?: "Sombre")
+    }
+    LaunchedEffect(themeMode) {
+        context.getSharedPreferences("moviehub_preferences", 0).edit().putString("theme", themeMode).apply()
+    }
     var splash by remember { mutableStateOf(true) }
     var selected by remember { mutableStateOf<MediaItem?>(null) }
     var detailLoading by remember { mutableStateOf(false) }
@@ -173,8 +191,12 @@ private fun MoviesHubApp() {
     }
 
     MaterialTheme(colorScheme = darkColorScheme(
-        primary = Gold, background = Black, surface = Panel,
-        onPrimary = Black, onBackground = Color.White, onSurface = Color.White
+        primary = Gold,
+        background = if (themeMode == "Clair") Color(0xFFF4F1E9) else Black,
+        surface = if (themeMode == "Clair") Color.White else Panel,
+        onPrimary = Black,
+        onBackground = if (themeMode == "Clair") Color(0xFF151515) else Color.White,
+        onSurface = if (themeMode == "Clair") Color(0xFF151515) else Color.White
     )) {
         if (splash) {
             SplashScreen()
@@ -182,8 +204,8 @@ private fun MoviesHubApp() {
             Scaffold(
                 containerColor = Black,
                 bottomBar = {
-                    if (screen in listOf(Screen.HOME, Screen.DOWNLOADS, Screen.SHARE, Screen.PROFILE, Screen.CATEGORIES, Screen.SEARCH)) {
-                        BottomNavigationBar(screen) { screen = it }
+                    if (screen in listOf(Screen.HOME, Screen.CATEGORIES, Screen.DOWNLOADS, Screen.PROFILE)) {
+                        BottomNavigationBar(screen) { backStack.clear(); screen = it }
                     }
                 }
             ) { padding ->
@@ -206,13 +228,13 @@ private fun MoviesHubApp() {
                                     loading = false
                                 }
                             },
-                            onCategories = { screen = Screen.CATEGORIES },
-                            onSearch = { screen = Screen.SEARCH },
+                            onCategories = { navigate(Screen.CATEGORIES) },
+                            onSearch = { navigate(Screen.SEARCH) },
                             onSelect = { selected = it; screen = Screen.DETAIL; detailLoading = true; scope.launch { MoviesHubApi.detail(it.slug)?.let { fresh -> selected = fresh }; detailLoading = false } }
                         )
                         Screen.CATEGORIES -> CategoriesScreen(
                             activeFilter, onFilter = { activeFilter = it },
-                            onBack = { screen = Screen.HOME },
+                            onBack = { goBack() },
                             onSelect = {
                                 selected = it
                                 screen = Screen.DETAIL
@@ -246,11 +268,11 @@ private fun MoviesHubApp() {
                                 }
                             }
                         )
-                        Screen.DETAIL -> DetailScreen(selected, detailLoading, onBack = { screen = Screen.HOME }, onPlay = { screen = Screen.PLAYER })
-                        Screen.PLAYER -> PlayerScreen(selected, onBack = { screen = Screen.DETAIL })
+                        Screen.DETAIL -> DetailScreen(selected, detailLoading, onBack = { goBack() }, onPlay = { navigate(Screen.PLAYER) })
+                        Screen.PLAYER -> PlayerScreen(selected, onBack = { goBack() })
                         Screen.DOWNLOADS -> DownloadsScreen()
-                        Screen.SHARE -> ShareScreen()
-                        Screen.PROFILE -> ProfileScreen()
+                        Screen.PROFILE -> ProfileScreen(onSettings = { navigate(Screen.SETTINGS) })
+                        Screen.SETTINGS -> SettingsScreen(themeMode = themeMode, onThemeChange = { themeMode = it }, onBack = { goBack() })
                     }
                 }
             }
@@ -264,10 +286,12 @@ private fun SplashScreen() {
         Brush.verticalGradient(listOf(Color(0xFF08090D), Black, Color(0xFF090B12)))
     ), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            Box(Modifier.size(116.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF17130A)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.PlayCircle, null, tint = Gold, modifier = Modifier.size(86.dp))
-            }
-            Text("MoviesHub", color = Gold, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+            Image(
+                painter = painterResource(id = R.drawable.moviehub_logo),
+                contentDescription = "Logo MovieHub",
+                modifier = Modifier.size(132.dp),
+                contentScale = ContentScale.Fit
+            )
             Text("Tes films, séries et animés\nau même endroit", color = Color.White, fontSize = 14.sp, lineHeight = 21.sp)
             Spacer(Modifier.height(95.dp))
             LinearProgressIndicator(color = Gold, trackColor = Color(0xFF332B1B), modifier = Modifier.width(170.dp))
@@ -281,13 +305,13 @@ private fun BottomNavigationBar(screen: Screen, onNavigate: (Screen) -> Unit) {
     NavigationBar(containerColor = Color(0xFF090B0F), contentColor = Gold) {
         val entries = listOf(
             Triple(Screen.HOME, "Accueil", Icons.Default.Home),
+            Triple(Screen.CATEGORIES, "Catégories", Icons.Default.Category),
             Triple(Screen.DOWNLOADS, "Téléchargements", Icons.Default.Download),
-            Triple(Screen.SHARE, "Partage", Icons.Default.Share),
             Triple(Screen.PROFILE, "Profil", Icons.Default.Person)
         )
         entries.forEach { (destination, label, icon) ->
             NavigationBarItem(
-                selected = screen == destination || (destination == Screen.HOME && screen in listOf(Screen.CATEGORIES, Screen.SEARCH)),
+                selected = screen == destination || (destination == Screen.HOME && screen in listOf(Screen.SEARCH, Screen.DETAIL, Screen.PLAYER)),
                 onClick = { onNavigate(destination) },
                 icon = { Icon(icon, contentDescription = label) },
                 label = { Text(label, fontSize = 10.sp) },
@@ -304,7 +328,10 @@ private fun BottomNavigationBar(screen: Screen, onNavigate: (Screen) -> Unit) {
 @Composable
 private fun Header(title: String = "MoviesHub", onCategories: (() -> Unit)? = null, onSearch: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (onCategories != null) IconButton(onClick = onCategories) { Icon(Icons.Default.Menu, "Catégories", tint = Color.White) }
+        if (title == "MoviesHub") {
+            Image(painterResource(R.drawable.moviehub_logo), contentDescription = "Logo MovieHub", modifier = Modifier.size(38.dp), contentScale = ContentScale.Fit)
+            Spacer(Modifier.width(10.dp))
+        }
         Text(title, color = Gold, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         if (onSearch != null) IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Recherche", tint = Color.White) }
     }
@@ -334,17 +361,21 @@ private fun HomeScreen(
 ) {
     var filter by remember { mutableStateOf("Tous") }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
-        item { Header(onCategories = onCategories, onSearch = onSearch) }
-        item { FilterChips(filter) { filter = it; onFilterChange(it) } }
+        item { Header(onSearch = onSearch) }
+        item { Text("Films, séries et animés à découvrir", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)) }
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                Box(Modifier.fillMaxWidth().height(205.dp).clip(RoundedCornerShape(18.dp)).background(
-                    Brush.linearGradient(listOf(Color(0xFF26384B), Color(0xFF151A22), Color(0xFF6B351C)))
+                Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(20.dp)).background(
+                    Brush.linearGradient(listOf(Color(0xFF292116), Color(0xFF11151B), Color(0xFF3B2A13)))
                 )) {
+                    media.firstOrNull()?.poster?.let { poster ->
+                        AsyncImage(poster, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.42f)
+                    }
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xEE050608)))))
                     Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
-                        Text("À DÉCOUVRIR", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text("Votre prochain film préféré", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        Text("Films • Séries • Animes", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                        Text("L’UNIVERS MOVIEHUB", color = Gold, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                        Text(media.firstOrNull()?.title ?: "Ton prochain film préféré", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2)
+                        Text("Découvre ton prochain coup de cœur", color = Color.White.copy(alpha = .82f), fontSize = 12.sp)
                     }
                 }
             }
@@ -353,7 +384,19 @@ private fun HomeScreen(
         if (loading) item { LinearProgressIndicator(color = Gold, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
         if (error != null && media.isEmpty()) item { EmptyMessage(error) }
         if (!loading && media.isEmpty() && error == null) item { EmptyMessage("Le catalogue apparaîtra ici dès que des contenus seront publiés.") }
-        items(media.take(12)) { item -> MediaPoster(item, onClick = { onSelect(item) }) }
+        item {
+            androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(media.take(12)) { item ->
+                    Column(Modifier.width(132.dp).clickable { onSelect(item) }) {
+                        if (item.poster != null) AsyncImage(item.poster, contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                        else Box(Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(12.dp)).background(Panel), contentAlignment = Alignment.Center) { Icon(Icons.Default.Movie, null, tint = Gold, modifier = Modifier.size(38.dp)) }
+                        Spacer(Modifier.height(7.dp))
+                        Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+                        Text(item.type, color = Muted, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
         item { SectionTitle("Animes populaires", "Explorer") }
         item { Text("Les catégories et les contenus publiés seront chargés depuis le catalogue MovieHub.", color = Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 12.sp) }
     }
@@ -503,12 +546,37 @@ private fun PlayerScreen(item: MediaItem?, onBack: () -> Unit) {
 
 @Composable
 private fun DownloadsScreen() {
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(Icons.Default.Download, null, tint = Gold, modifier = Modifier.size(62.dp))
-        Spacer(Modifier.height(16.dp))
-        Text("Téléchargements", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Tes fichiers téléchargés apparaîtront ici.", color = Muted)
-        Text("Le téléchargement réel utilisera les liens temporaires fournis par l’API et le stockage local Android.", color = Muted, fontSize = 12.sp)
+    var transferMode by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxSize().padding(20.dp)) {
+        Header("Téléchargements")
+        Text("Ta bibliothèque hors connexion", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf("Partager", "Recevoir").forEach { action ->
+                OutlinedButton(onClick = { transferMode = action }, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)) {
+                    Icon(if (action == "Partager") Icons.Default.Share else Icons.Default.Download, null)
+                    Spacer(Modifier.width(6.dp)); Text(action)
+                }
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.DownloadForOffline, null, tint = Gold, modifier = Modifier.size(62.dp))
+                Spacer(Modifier.height(14.dp))
+                Text("Aucun téléchargement", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("Les vidéos enregistrées apparaîtront ici.", color = Muted, fontSize = 13.sp)
+                Text("Elles resteront dans l’espace privé de MovieHub et ne seront pas visibles dans la galerie publique.", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+        if (transferMode != null) {
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(if (transferMode == "Partager") "Envoyer un téléchargement" else "Recevoir un fichier", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Le transfert local sécurisé sera lancé depuis cette section. L’interface est prête, le moteur de transfert reste à connecter.", color = Muted, fontSize = 12.sp)
+                    TextButton(onClick = { transferMode = null }) { Text("Fermer", color = Gold) }
+                }
+            }
+        }
     }
 }
 
@@ -538,7 +606,8 @@ private fun ShareScreen() {
 }
 
 @Composable
-private fun ProfileScreen() {
+private fun ProfileScreen(onSettings: () -> Unit) {
+    var showToken by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Header("Profil")
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -548,10 +617,34 @@ private fun ProfileScreen() {
                 Text("Connecte-toi pour synchroniser tes favoris et ton historique.", color = Muted, fontSize = 12.sp)
             }
         }
-        Spacer(Modifier.height(25.dp))
-        listOf("Mes favoris", "Historique de visionnage", "Paramètres", "Aide & support", "À propos").forEach {
+        Spacer(Modifier.height(24.dp))
+        Card(colors = CardDefaults.cardColors(containerColor = Panel), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Jeton de session", color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { showToken = !showToken }) { Icon(if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility, "Afficher ou masquer le jeton", tint = Gold) }
+                }
+                Text(if (showToken) "Aucun jeton de session enregistré" else "••••••••••••••••", color = Muted, fontSize = 13.sp)
+                Text("Le jeton réel apparaîtra ici après la connexion sécurisée au compte.", color = Muted, fontSize = 11.sp)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        listOf("Mes favoris", "Historique de visionnage").forEach { label ->
             Row(Modifier.fillMaxWidth().clickable {}.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(it, color = Color.White, modifier = Modifier.weight(1f))
+                Text(label, color = Color.White, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight, null, tint = Gold)
+            }
+            HorizontalDivider(color = Color(0xFF242932))
+        }
+        Row(Modifier.fillMaxWidth().clickable(onClick = onSettings).padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Settings, null, tint = Gold); Spacer(Modifier.width(12.dp))
+            Text("Paramètres", color = Color.White, modifier = Modifier.weight(1f))
+            Icon(Icons.Default.ChevronRight, null, tint = Gold)
+        }
+        HorizontalDivider(color = Color(0xFF242932))
+        listOf("Aide & support", "À propos").forEach { label ->
+            Row(Modifier.fillMaxWidth().clickable {}.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(label, color = Color.White, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.ChevronRight, null, tint = Gold)
             }
             HorizontalDivider(color = Color(0xFF242932))
@@ -562,4 +655,42 @@ private fun ProfileScreen() {
 @Composable
 private fun EmptyMessage(message: String) {
     Text(message, color = Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(22.dp))
+}
+
+@Composable
+private fun SettingsScreen(themeMode: String, onThemeChange: (String) -> Unit, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = Color.White) }
+            Text("Paramètres", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(20.dp))
+        Text("APPARENCE", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("Thème de l’application", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text("Choisis l’apparence de MovieHub.", color = Muted, fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+        listOf("Sombre", "Clair", "Système").forEach { option ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(if (themeMode == option) Color(0xFF282113) else Panel)
+                    .clickable { onThemeChange(option) }.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    when (option) {
+                        "Sombre" -> Icons.Default.DarkMode
+                        "Clair" -> Icons.Default.LightMode
+                        else -> Icons.Default.SettingsSuggest
+                    }, null, tint = Gold
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(option, color = Color.White, modifier = Modifier.weight(1f))
+                RadioButton(selected = themeMode == option, onClick = { onThemeChange(option) }, colors = RadioButtonDefaults.colors(selectedColor = Gold))
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("Les préférences sont enregistrées sur cet appareil.", color = Muted, fontSize = 11.sp)
+    }
 }
