@@ -1,5 +1,10 @@
 import { RateLimitedError } from '@movieshub/shared';
 
+export interface RateLimiter {
+  assert(key: string): void | Promise<void>;
+  reset(key: string): void | Promise<void>;
+}
+
 export interface RateLimitResult {
   allowed: boolean;
   retryAfterSeconds: number;
@@ -10,7 +15,7 @@ export interface RateLimitResult {
  * Si l'API est répliquée, un stockage partagé est nécessaire pour appliquer
  * une limite cohérente entre les instances.
  */
-export class SlidingWindowLimiter {
+export class SlidingWindowLimiter implements RateLimiter {
   private readonly max: number;
   private readonly windowMs: number;
   private readonly now: () => number;
