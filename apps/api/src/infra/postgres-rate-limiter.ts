@@ -13,19 +13,22 @@ export class PostgresRateLimiter implements RateLimiter {
   private readonly pepper: string;
   private readonly max: number;
   private readonly windowMs: number;
+  private readonly namespace: string;
 
-  constructor(db: PrismaClient, pepper: string, opts: { max: number; windowMs: number }) {
+  constructor(db: PrismaClient, pepper: string, opts: { max: number; windowMs: number; namespace: string }) {
     if (!Number.isSafeInteger(opts.max) || opts.max < 1) throw new RangeError('max doit être un entier positif');
     if (!Number.isSafeInteger(opts.windowMs) || opts.windowMs < 1) throw new RangeError('windowMs doit être un entier positif');
     if (pepper.length < 32) throw new RangeError('pepper doit contenir au moins 32 caractères');
+    if (!opts.namespace.trim()) throw new RangeError('namespace ne doit pas être vide');
     this.db = db;
     this.pepper = pepper;
     this.max = opts.max;
     this.windowMs = opts.windowMs;
+    this.namespace = opts.namespace;
   }
 
   private key(value: string): string {
-    return createHmac('sha256', this.pepper).update(value).digest('hex');
+    return createHmac('sha256', this.pepper).update(this.namespace).update(':').update(value).digest('hex');
   }
 
   async assert(value: string): Promise<void> {
