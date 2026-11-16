@@ -198,6 +198,21 @@ private object MoviesHubApi {
         active to request(path, "GET", bearer = active.accessToken)
     }
 
+    suspend fun putAuthorized(path: String, session: AuthSessionData): AuthSessionData = withContext(Dispatchers.IO) {
+        val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
+            val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
+            val user = refreshed.getJSONObject("user")
+            AuthSessionData(
+                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
+                refreshed.getString("accessToken"),
+                refreshed.getString("refreshToken"),
+                System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
+            )
+        } else session
+        request(path, "PUT", bearer = active.accessToken)
+        active
+    }
+
     suspend fun deleteAuthorized(path: String, session: AuthSessionData): AuthSessionData = withContext(Dispatchers.IO) {
         val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
             val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
@@ -344,6 +359,7 @@ private fun MoviesHubApp() {
     var accountLoading by remember { mutableStateOf(false) }
     var accountError by remember { mutableStateOf<String?>(null) }
     var historyIds by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var favoriteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -462,7 +478,28 @@ private fun MoviesHubApp() {
                                 }
                             }
                         )
-                        Screen.DETAIL -> DetailScreen(selected, detailLoading, onBack = { goBack() }, onPlay = { navigate(Screen.PLAYER) })
+                        Screen.DETAIL -> DetailScreen(
+                            selected, detailLoading,
+                            isFavorite = selected?.id in favoriteIds,
+                            onBack = { goBack() },
+                            onPlay = { navigate(Screen.PLAYER) },
+                            onFavorite = {
+                                val item = selected
+                                val current = session
+                                if (item != null && current == null) navigate(Screen.AUTH)
+                                else if (item != null && current != null) scope.launch {
+                                    val wasFavorite = item.id in favoriteIds
+                                    runCatching {
+                                        if (wasFavorite) MoviesHubApi.deleteAuthorized("/me/favorites/${item.id}", current)
+                                        else MoviesHubApi.putAuthorized("/me/favorites/${item.id}", current)
+                                    }.onSuccess { updated ->
+                                        session = updated
+                                        SecureSessionStore.save(context, updated)
+                                        favoriteIds = if (wasFavorite) favoriteIds - item.id else favoriteIds + item.id
+                                    }.onFailure { accountError = it.message ?: "Action impossible" }
+                                }
+                            }
+                        )
                         Screen.PLAYER -> PlayerScreen(selected, onBack = { goBack() })
                         Screen.DOWNLOADS -> DownloadsScreen()
                         Screen.PROFILE -> ProfileScreen(
@@ -805,7 +842,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, media: List<M
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, loading: Boolean, onBack: () -> Unit, onPlay: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
@@ -822,8 +859,12 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, onBack: () -> Unit,
             Button(onClick = onPlay, enabled = !item?.trailerUrl.isNullOrBlank(), modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background, disabledContainerColor = Color(0xFF343434), disabledContentColor = UiColors.muted)) {
                 Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(if (item?.trailerUrl.isNullOrBlank()) "Bande-annonce indisponible" else "Voir la bande-annonce")
             }
+            OutlinedButton(onClick = onFavorite, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
+                Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
+                Spacer(Modifier.width(6.dp)); Text(if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris")
+            }
             OutlinedButton(onClick = {}, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
-                Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Télécharger — connexion requise")
+                Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Télécharger — bientôt disponible")
             }
         }
     }
