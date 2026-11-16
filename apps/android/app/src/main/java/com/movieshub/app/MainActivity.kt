@@ -78,6 +78,8 @@ class MainActivity : ComponentActivity() {
 
 private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS, PROFILE, SETTINGS }
 
+private data class Genre(val slug: String, val name: String)
+
 private data class MediaItem(
     val id: String,
     val title: String,
@@ -110,9 +112,25 @@ private object MoviesHubApi {
         parseMedia(get("/home"))
     }
 
-    suspend fun contents(type: String? = null): List<MediaItem> = withContext(Dispatchers.IO) {
-        val query = type?.let { "?type=$it&limit=30" } ?: "?limit=30"
-        parseMedia(get("/contents$query"))
+    suspend fun contents(type: String? = null, genre: String? = null): List<MediaItem> = withContext(Dispatchers.IO) {
+        val params = mutableListOf<String>()
+        type?.let { params += "type=$it" }
+        genre?.let { params += "genre=${java.net.URLEncoder.encode(it, "UTF-8")}" }
+        params += "limit=30"
+        parseMedia(get("/contents?${params.joinToString("&")}"))
+    }
+
+    suspend fun genres(): List<Genre> = withContext(Dispatchers.IO) {
+        val root = JSONObject(get("/genres"))
+        val array = root.optJSONArray("genres") ?: return@withContext emptyList()
+        buildList {
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val slug = item.optString("slug")
+                val name = item.optString("name")
+                if (slug.isNotBlank() && name.isNotBlank()) add(Genre(slug, name))
+            }
+        }
     }
 
     suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) {
@@ -192,6 +210,7 @@ private fun MoviesHubApp() {
     var detailLoading by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf("Tous") }
+    var genres by remember { mutableStateOf<List<Genre>>(emptyList()) }
     var media by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -204,6 +223,8 @@ private fun MoviesHubApp() {
         runCatching { MoviesHubApi.home() }
             .onSuccess { media = it; error = null }
             .onFailure { error = "Connexion à l’API indisponible"; media = emptyList() }
+        runCatching { MoviesHubApi.genres() }
+            .onSuccess { genres = it }
         loading = false
     }
 
@@ -257,14 +278,24 @@ private fun MoviesHubApp() {
                             onSelect = { selected = it; navigate(Screen.DETAIL); detailLoading = true; scope.launch { MoviesHubApi.detail(it.slug)?.let { fresh -> selected = fresh }; detailLoading = false } }
                         )
                         Screen.CATEGORIES -> CategoriesScreen(
-                            activeFilter, media, loading,
+                            activeFilter, genres, media, loading,
                             onFilter = { category ->
-                                activeFilter = category
+                                activeFilter = category.slug
                                 scope.launch {
                                     loading = true
-                                    runCatching { MoviesHubApi.search(category) }
+                                    runCatching { MoviesHubApi.contents(genre = category.slug) }
                                         .onSuccess { media = it; error = null }
                                         .onFailure { error = "Impossible de charger cette catégorie" }
+                                    loading = false
+                                }
+                            },
+                            onClearFilter = {
+                                activeFilter = "Tous"
+                                scope.launch {
+                                    loading = true
+                                    runCatching { MoviesHubApi.contents() }
+                                        .onSuccess { media = it; error = null }
+                                        .onFailure { error = "Impossible de charger le catalogue" }
                                     loading = false
                                 }
                             },
@@ -467,13 +498,15 @@ private fun MediaPoster(item: MediaItem, onClick: () -> Unit) {
 @Composable
 private fun CategoriesScreen(
     active: String,
+    genres: List<Genre>,
     media: List<MediaItem>,
     loading: Boolean,
-    onFilter: (String) -> Unit,
+    onFilter: (Genre) -> Unit,
+    onClearFilter: () -> Unit,
     onBack: () -> Unit,
     onSelect: (MediaItem) -> Unit
 ) {
-    val categories = listOf("Action", "Aventure", "Comédie", "Drame", "Horreur", "Science-fiction", "Fantastique", "Animation")
+    val activeName = genres.firstOrNull { it.slug == active }?.name ?: active
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Explorer", color = UiColors.text, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
@@ -481,40 +514,44 @@ private fun CategoriesScreen(
         }
         if (active == "Tous") {
             Text("Choisis un univers", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                contentPadding = PaddingValues(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(categories.size) { index ->
-                    val category = categories[index]
-                    Column(
-                        Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(16.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFF302719), UiColors.panel)))
-                            .clickable { onFilter(category) }.padding(14.dp),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Icon(
-                            when (category) {
-                                "Action" -> Icons.Default.Bolt
-                                "Aventure" -> Icons.Default.Explore
-                                "Comédie" -> Icons.Default.TheaterComedy
-                                "Drame" -> Icons.Default.Theaters
-                                "Horreur" -> Icons.Default.DarkMode
-                                "Science-fiction" -> Icons.Default.RocketLaunch
-                                "Fantastique" -> Icons.Default.AutoAwesome
-                                else -> Icons.Default.Animation
-                            }, null, tint = UiColors.accent, modifier = Modifier.size(25.dp)
-                        )
-                        Text(category, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            if (genres.isEmpty()) {
+                EmptyMessage("Les catégories apparaîtront ici dès qu'elles seront disponibles dans le catalogue.")
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(genres.size) { index ->
+                        val category = genres[index]
+                        Column(
+                            Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(16.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF302719), UiColors.panel)))
+                                .clickable { onFilter(category) }.padding(14.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Icon(
+                                when (category.name.lowercase()) {
+                                    "action" -> Icons.Default.Bolt
+                                    "aventure" -> Icons.Default.Explore
+                                    "comédie", "comedie" -> Icons.Default.TheaterComedy
+                                    "drame" -> Icons.Default.Theaters
+                                    "horreur" -> Icons.Default.DarkMode
+                                    "science-fiction", "science fiction" -> Icons.Default.RocketLaunch
+                                    "fantastique" -> Icons.Default.AutoAwesome
+                                    else -> Icons.Default.Movie
+                                }, null, tint = UiColors.accent, modifier = Modifier.size(25.dp)
+                            )
+                            Text(category.name, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
                     }
                 }
             }
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(active, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = { onFilter("Tous") }) { Text("Toutes", color = UiColors.accent) }
+                Text(activeName, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearFilter) { Text("Toutes", color = UiColors.accent) }
             }
             if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
             if (!loading && media.isEmpty()) EmptyMessage("Aucun résultat pour cette catégorie pour le moment.")
