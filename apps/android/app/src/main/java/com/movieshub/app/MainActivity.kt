@@ -1,6 +1,9 @@
 package com.movieshub.app
 
 import android.os.Bundle
+import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -39,6 +42,9 @@ import androidx.media3.common.MediaItem as PlayerMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,7 +82,45 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS, PROFILE, SETTINGS }
+private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS, PROFILE, SETTINGS, AUTH, FAVORITES, HISTORY }
+
+private data class SessionUser(val id: String, val email: String, val displayName: String)
+private data class AuthSessionData(val user: SessionUser, val accessToken: String, val refreshToken: String, val expiresAtMillis: Long)
+private data class HistoryEntry(val id: String, val content: MediaItem, val positionSeconds: Int, val completed: Boolean)
+
+private object SecureSessionStore {
+    private fun preferences(context: Context) = EncryptedSharedPreferences.create(
+        context,
+        "moviehub_secure_session",
+        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+
+    fun read(context: Context): AuthSessionData? = runCatching {
+        val prefs = preferences(context)
+        val id = prefs.getString("user_id", null) ?: return null
+        val email = prefs.getString("email", null) ?: return null
+        val name = prefs.getString("display_name", null) ?: return null
+        val access = prefs.getString("access_token", null) ?: return null
+        val refresh = prefs.getString("refresh_token", null) ?: return null
+        val expiresAt = prefs.getLong("expires_at", 0L)
+        AuthSessionData(SessionUser(id, email, name), access, refresh, expiresAt)
+    }.getOrNull()
+
+    fun save(context: Context, session: AuthSessionData) {
+        preferences(context).edit()
+            .putString("user_id", session.user.id)
+            .putString("email", session.user.email)
+            .putString("display_name", session.user.displayName)
+            .putString("access_token", session.accessToken)
+            .putString("refresh_token", session.refreshToken)
+            .putLong("expires_at", session.expiresAtMillis)
+            .apply()
+    }
+
+    fun clear(context: Context) { preferences(context).edit().clear().apply() }
+}
 
 private data class Genre(val slug: String, val name: String)
 
@@ -92,20 +136,100 @@ private data class MediaItem(
 )
 
 private object MoviesHubApi {
-    private fun get(path: String): String {
+    private fun request(path: String, method: String, body: JSONObject? = null, bearer: String? = null): String {
         val base = BuildConfig.API_BASE_URL.trimEnd('/')
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 7000
-            readTimeout = 7000
+            requestMethod = method
+            connectTimeout = 10000
+            readTimeout = 15000
             setRequestProperty("Accept", "application/json")
+            if (body != null) {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+            bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         return try {
-            if (connection.responseCode !in 200..299) error("API HTTP ${connection.responseCode}")
-            connection.inputStream.bufferedReader().use { it.readText() }
+            if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val message = runCatching { JSONObject(response).optString("message") }.getOrNull()
+                error(message?.takeIf { it.isNotBlank() } ?: "Erreur API HTTP $code")
+            }
+            response
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun get(path: String): String = request(path, "GET")
+
+    suspend fun authenticate(email: String, password: String, displayName: String?, register: Boolean): AuthSessionData =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject()
+                .put("email", email.trim())
+                .put("password", password)
+                .put("platform", "ANDROID")
+                .put("deviceName", "Android")
+            if (register) body.put("displayName", displayName?.trim().orEmpty())
+            val result = JSONObject(request(if (register) "/auth/register" else "/auth/login", "POST", body))
+            val user = result.getJSONObject("user")
+            AuthSessionData(
+                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
+                result.getString("accessToken"),
+                result.getString("refreshToken"),
+                System.currentTimeMillis() + result.optLong("expiresIn", 900L) * 1000L
+            )
+        }
+
+    suspend fun authorizedGet(path: String, session: AuthSessionData): Pair<AuthSessionData, String> = withContext(Dispatchers.IO) {
+        val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
+            val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
+            val user = refreshed.getJSONObject("user")
+            AuthSessionData(
+                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
+                refreshed.getString("accessToken"),
+                refreshed.getString("refreshToken"),
+                System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
+            )
+        } else session
+        active to request(path, "GET", bearer = active.accessToken)
+    }
+
+    suspend fun putAuthorized(path: String, session: AuthSessionData): AuthSessionData = withContext(Dispatchers.IO) {
+        val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
+            val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
+            val user = refreshed.getJSONObject("user")
+            AuthSessionData(
+                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
+                refreshed.getString("accessToken"),
+                refreshed.getString("refreshToken"),
+                System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
+            )
+        } else session
+        request(path, "PUT", bearer = active.accessToken)
+        active
+    }
+
+    suspend fun deleteAuthorized(path: String, session: AuthSessionData): AuthSessionData = withContext(Dispatchers.IO) {
+        val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
+            val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
+            val user = refreshed.getJSONObject("user")
+            AuthSessionData(
+                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
+                refreshed.getString("accessToken"),
+                refreshed.getString("refreshToken"),
+                System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
+            )
+        } else session
+        request(path, "DELETE", bearer = active.accessToken)
+        active
+    }
+
+    suspend fun logout(refreshToken: String) = withContext(Dispatchers.IO) {
+        request("/auth/logout", "POST", JSONObject().put("refreshToken", refreshToken))
     }
 
     suspend fun home(): List<MediaItem> = withContext(Dispatchers.IO) {
@@ -129,6 +253,20 @@ private object MoviesHubApi {
                 val slug = item.optString("slug")
                 val name = item.optString("name")
                 if (slug.isNotBlank() && name.isNotBlank()) add(Genre(slug, name))
+            }
+        }
+    }
+
+    fun parseAccountItems(raw: String): List<MediaItem> = parseMedia(raw)
+
+    fun parseHistory(raw: String): List<HistoryEntry> {
+        val root = JSONObject(raw)
+        val array = root.optJSONArray("items") ?: return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val entry = array.optJSONObject(i) ?: continue
+                val content = entry.optJSONObject("content") ?: continue
+                add(HistoryEntry(entry.optString("id"), parseItem(content), entry.optInt("positionSeconds"), entry.optBoolean("completed")))
             }
         }
     }
@@ -198,6 +336,7 @@ private fun MoviesHubApp() {
         screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.HOME
     }
     val context = LocalContext.current
+    var session by remember { mutableStateOf(SecureSessionStore.read(context)) }
     var themeMode by remember {
         mutableStateOf(context.getSharedPreferences("moviehub_preferences", 0).getString("theme", "Sombre") ?: "Sombre")
     }
@@ -215,6 +354,12 @@ private fun MoviesHubApp() {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    var authError by remember { mutableStateOf<String?>(null) }
+    var accountItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var accountLoading by remember { mutableStateOf(false) }
+    var accountError by remember { mutableStateOf<String?>(null) }
+    var historyIds by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var favoriteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -333,10 +478,126 @@ private fun MoviesHubApp() {
                                 }
                             }
                         )
-                        Screen.DETAIL -> DetailScreen(selected, detailLoading, onBack = { goBack() }, onPlay = { navigate(Screen.PLAYER) })
+                        Screen.DETAIL -> DetailScreen(
+                            selected, detailLoading,
+                            isFavorite = selected?.id in favoriteIds,
+                            onBack = { goBack() },
+                            onPlay = { navigate(Screen.PLAYER) },
+                            onFavorite = {
+                                val item = selected
+                                val current = session
+                                if (item != null && current == null) navigate(Screen.AUTH)
+                                else if (item != null && current != null) scope.launch {
+                                    val wasFavorite = item.id in favoriteIds
+                                    runCatching {
+                                        if (wasFavorite) MoviesHubApi.deleteAuthorized("/me/favorites/${item.id}", current)
+                                        else MoviesHubApi.putAuthorized("/me/favorites/${item.id}", current)
+                                    }.onSuccess { updated ->
+                                        session = updated
+                                        SecureSessionStore.save(context, updated)
+                                        favoriteIds = if (wasFavorite) favoriteIds - item.id else favoriteIds + item.id
+                                    }.onFailure { accountError = it.message ?: "Action impossible" }
+                                }
+                            }
+                        )
                         Screen.PLAYER -> PlayerScreen(selected, onBack = { goBack() })
                         Screen.DOWNLOADS -> DownloadsScreen()
-                        Screen.PROFILE -> ProfileScreen(onSettings = { navigate(Screen.SETTINGS) })
+                        Screen.PROFILE -> ProfileScreen(
+                            session = session,
+                            onLogin = { navigate(Screen.AUTH) },
+                            onFavorites = {
+                                if (session == null) navigate(Screen.AUTH) else {
+                                    navigate(Screen.FAVORITES)
+                                    accountLoading = true
+                                    scope.launch {
+                                        runCatching { MoviesHubApi.authorizedGet("/me/favorites", session!!) }
+                                            .onSuccess { (updated, raw) ->
+                                                session = updated
+                                                SecureSessionStore.save(context, updated)
+                                                accountItems = MoviesHubApi.parseAccountItems(raw)
+                                                accountError = null
+                                            }
+                                            .onFailure { accountError = it.message ?: "Favoris indisponibles" }
+                                        accountLoading = false
+                                    }
+                                }
+                            },
+                            onHistory = {
+                                if (session == null) navigate(Screen.AUTH) else {
+                                    navigate(Screen.HISTORY)
+                                    accountLoading = true
+                                    scope.launch {
+                                        runCatching { MoviesHubApi.authorizedGet("/me/history", session!!) }
+                                            .onSuccess { (updated, raw) ->
+                                                session = updated
+                                                SecureSessionStore.save(context, updated)
+                                                val parsed = MoviesHubApi.parseHistory(raw)
+                                                accountItems = parsed.map { it.content }
+                                                historyIds = parsed.associate { it.content.id to it.id }
+                                                accountError = null
+                                            }
+                                            .onFailure { accountError = it.message ?: "Historique indisponible" }
+                                        accountLoading = false
+                                    }
+                                }
+                            },
+                            onLogout = {
+                                val current = session
+                                scope.launch {
+                                    if (current != null) runCatching { MoviesHubApi.logout(current.refreshToken) }
+                                    SecureSessionStore.clear(context)
+                                    session = null
+                                }
+                            },
+                            onSettings = { navigate(Screen.SETTINGS) }
+                        )
+                        Screen.FAVORITES -> AccountListScreen(
+                            title = "Mes favoris", items = accountItems, loading = accountLoading, error = accountError,
+                            onBack = { goBack() }, onSelect = { selected = it; navigate(Screen.DETAIL) },
+                            onRemove = { item ->
+                                val current = session
+                                if (current != null) scope.launch {
+                                    runCatching { MoviesHubApi.deleteAuthorized("/me/favorites/${item.id}", current) }
+                                        .onSuccess { updated ->
+                                            session = updated; SecureSessionStore.save(context, updated)
+                                            accountItems = accountItems.filterNot { it.id == item.id }
+                                        }
+                                        .onFailure { accountError = it.message ?: "Suppression impossible" }
+                                }
+                            }
+                        )
+                        Screen.HISTORY -> AccountListScreen(
+                            title = "Historique", items = accountItems, loading = accountLoading, error = accountError,
+                            onBack = { goBack() }, onSelect = { selected = it; navigate(Screen.DETAIL) },
+                            onRemove = { item ->
+                                val historyId = historyIds[item.id]
+                                val current = session
+                                if (historyId != null && current != null) scope.launch {
+                                    runCatching { MoviesHubApi.deleteAuthorized("/me/history/$historyId", current) }
+                                        .onSuccess { updated ->
+                                            session = updated; SecureSessionStore.save(context, updated)
+                                            accountItems = accountItems.filterNot { it.id == item.id }
+                                        }
+                                        .onFailure { accountError = it.message ?: "Suppression impossible" }
+                                }
+                            }
+                        )
+                        Screen.AUTH -> AuthScreen(
+                            error = authError,
+                            onErrorConsumed = { authError = null },
+                            onBack = { goBack() },
+                            onSubmit = { email, password, displayName, register ->
+                                scope.launch {
+                                    runCatching { MoviesHubApi.authenticate(email, password, displayName, register) }
+                                        .onSuccess {
+                                            SecureSessionStore.save(context, it)
+                                            session = it
+                                            goBack()
+                                        }
+                                        .onFailure { authError = it.message ?: "Connexion impossible" }
+                                }
+                            }
+                        )
                         Screen.SETTINGS -> SettingsScreen(themeMode = themeMode, onThemeChange = { themeMode = it }, onBack = { goBack() })
                     }
                 }
@@ -581,7 +842,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, media: List<M
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, loading: Boolean, onBack: () -> Unit, onPlay: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
@@ -598,8 +859,12 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, onBack: () -> Unit,
             Button(onClick = onPlay, enabled = !item?.trailerUrl.isNullOrBlank(), modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background, disabledContainerColor = Color(0xFF343434), disabledContentColor = UiColors.muted)) {
                 Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(if (item?.trailerUrl.isNullOrBlank()) "Bande-annonce indisponible" else "Voir la bande-annonce")
             }
+            OutlinedButton(onClick = onFavorite, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
+                Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
+                Spacer(Modifier.width(6.dp)); Text(if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris")
+            }
             OutlinedButton(onClick = {}, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
-                Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Télécharger — connexion requise")
+                Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Télécharger — bientôt disponible")
             }
         }
     }
@@ -720,31 +985,42 @@ private fun ShareScreen() {
 }
 
 @Composable
-private fun ProfileScreen(onSettings: () -> Unit) {
-    var showToken by remember { mutableStateOf(false) }
+private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavorites: () -> Unit, onHistory: () -> Unit, onLogout: () -> Unit, onSettings: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Header("Profil")
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.AccountCircle, null, tint = UiColors.accent, modifier = Modifier.size(76.dp))
-                Text("Utilisateur", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text("Connecte-toi pour synchroniser tes favoris et ton historique.", color = UiColors.muted, fontSize = 12.sp)
+                Text(session?.user?.displayName ?: "Bienvenue sur MovieHub", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text(session?.user?.email ?: "Connecte-toi pour synchroniser tes favoris et ton historique.", color = UiColors.muted, fontSize = 12.sp)
+                if (session == null) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onLogin, colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background)) {
+                        Text("Se connecter / Créer un compte")
+                    }
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Compte connecté", color = UiColors.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
         Spacer(Modifier.height(24.dp))
         Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Jeton de session", color = UiColors.text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { showToken = !showToken }) { Icon(if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility, "Afficher ou masquer le jeton", tint = UiColors.accent) }
-                }
-                Text(if (showToken) "Aucun jeton de session enregistré" else "••••••••••••••••", color = UiColors.muted, fontSize = 13.sp)
-                Text("Le jeton réel apparaîtra ici après la connexion sécurisée au compte.", color = UiColors.muted, fontSize = 11.sp)
+                Text("Sécurité du compte", color = UiColors.text, fontWeight = FontWeight.SemiBold)
+                Text(if (session == null) "Aucune session active" else "Session active • jetons protégés sur cet appareil", color = UiColors.muted, fontSize = 12.sp)
+                Text("Les identifiants de session sont stockés de manière chiffrée et ne sont jamais affichés.", color = UiColors.muted, fontSize = 11.sp)
+            }
+        }
+        if (session != null) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
+                Icon(Icons.Default.Logout, null); Spacer(Modifier.width(8.dp)); Text("Se déconnecter")
             }
         }
         Spacer(Modifier.height(12.dp))
-        listOf("Mes favoris", "Historique de visionnage").forEach { label ->
-            Row(Modifier.fillMaxWidth().clickable {}.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf("Mes favoris" to onFavorites, "Historique de visionnage" to onHistory).forEach { (label, action) ->
+            Row(Modifier.fillMaxWidth().clickable(onClick = action).padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(label, color = UiColors.text, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
             }
@@ -762,6 +1038,85 @@ private fun ProfileScreen(onSettings: () -> Unit) {
                 Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
             }
             HorizontalDivider(color = Color(0xFF242932))
+        }
+    }
+}
+
+@Composable
+private fun AccountListScreen(
+    title: String,
+    items: List<MediaItem>,
+    loading: Boolean,
+    error: String?,
+    onBack: () -> Unit,
+    onSelect: (MediaItem) -> Unit,
+    onRemove: (MediaItem) -> Unit
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Retour", tint = UiColors.text) }
+            Text(title, color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+        if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth())
+        if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+        if (!loading && items.isEmpty()) EmptyMessage("Aucun contenu pour le moment.")
+        LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
+            items(items, key = { it.id }) { item ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { MediaPoster(item) { onSelect(item) } }
+                    IconButton(onClick = { onRemove(item) }) {
+                        Icon(Icons.Default.DeleteOutline, "Retirer", tint = UiColors.accent)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AuthScreen(
+    error: String?,
+    onErrorConsumed: () -> Unit,
+    onBack: () -> Unit,
+    onSubmit: (String, String, String, Boolean) -> Unit
+) {
+    var register by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
+    LaunchedEffect(error) { if (error != null) submitting = false }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
+        IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Retour", tint = UiColors.text) }
+        Spacer(Modifier.height(18.dp))
+        Text(if (register) "Créer un compte" else "Bienvenue", color = UiColors.text, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+        Text(if (register) "Rejoins MovieHub pour retrouver tes contenus." else "Connecte-toi pour synchroniser ton profil.", color = UiColors.muted, fontSize = 13.sp)
+        Spacer(Modifier.height(24.dp))
+        if (register) {
+            OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { Text("Nom affiché") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(10.dp))
+        }
+        OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Adresse e-mail") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Mot de passe") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        if (register) Text("8 caractères minimum.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+        if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+        Spacer(Modifier.height(18.dp))
+        Button(
+            onClick = {
+                onErrorConsumed()
+                submitting = true
+                onSubmit(email, password, displayName, register)
+            },
+            enabled = !submitting && email.contains("@") && password.isNotBlank() && (!register || displayName.trim().length >= 2 && password.length >= 8),
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background)
+        ) {
+            if (submitting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Text(if (register) "Créer mon compte" else "Se connecter")
+        }
+        TextButton(onClick = { register = !register; onErrorConsumed() }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (register) "J’ai déjà un compte" else "Créer un compte", color = UiColors.accent)
         }
     }
 }
