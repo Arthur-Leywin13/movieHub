@@ -8,7 +8,7 @@ Ouvre le dossier `apps/android` dans Android Studio, puis laisse Gradle synchron
 
 - JDK 17
 - Android SDK 35
-- Gradle 8.9 ou version compatible avec Android Gradle Plugin 8.7.3
+- Gradle 8.9 / Android Gradle Plugin 8.7.3
 
 ## Connexion à l'API
 
@@ -19,12 +19,13 @@ L'URL de développement est définie dans `app/build.gradle.kts` :
 
 L'API doit être démarrée et accessible depuis l'appareil. Le manifeste autorise HTTP en développement ; utilise HTTPS et désactive le trafic en clair avant une publication.
 
-## État de cette première étape
+## État de cette étape
 
-- Interface Compose : écran d'ouverture, accueil, catégories, recherche, détails, lecteur préparatoire, téléchargements, partage et profil.
-- Connexions publiques commencées : `GET /home` et `GET /search?q=`.
+- Interface Compose : écran d'ouverture, accueil, catégories, recherche, détails, lecteur, téléchargements, partage et profil.
+- Connexions publiques : `GET /home`, `GET /contents`, `GET /contents/:slugOuId` et `GET /search?q=`.
+- Lecteur AndroidX Media3 opérationnel pour les URL HTTPS de bandes-annonces renvoyées par la fiche publique.
 - Les affiches utilisent les URL renvoyées par l'API lorsqu'elles sont présentes.
-- Authentification, favoris, téléchargements en arrière-plan, lecture Media3 et partage Wi-Fi direct/QR restent à connecter aux services correspondants.
-- Les écrans qui ne sont pas encore reliés à un service affichent explicitement leur état préparatoire.
+- Lecture des films complets : nécessite une authentification et l'obtention d'un lien temporaire via `POST /versions/:id/download`.
+- Authentification, téléchargement local en arrière-plan, partage Wi-Fi direct/QR, favoris et historique restent à connecter.
 
-Cette étape est une fondation d'interface ; elle ne prétend pas fournir déjà le lecteur vidéo ou le transfert local complet.
+Le workflow GitHub Actions `.github/workflows/android.yml` compile l'APK debug sur les changements Android. Le test réel R2 reste volontairement reporté.
