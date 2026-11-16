@@ -46,9 +46,9 @@ async function main(): Promise<void> {
       users,
       sessions: new PrismaSessionRepo(prisma),
       rateLimiters: {
-        loginIp: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 30, windowMs: 15 * 60_000 }),
-        loginEmail: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 5, windowMs: 15 * 60_000 }),
-        registerIp: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 10, windowMs: 60 * 60_000 }),
+        loginIp: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 30, windowMs: 15 * 60_000, namespace: 'login-ip' }),
+        loginEmail: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 5, windowMs: 15 * 60_000, namespace: 'login-email' }),
+        registerIp: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 10, windowMs: 60 * 60_000, namespace: 'register-ip' }),
       },
     },
     // JWT_REFRESH_SECRET sert de clé HMAC pour hacher les refresh tokens en base.
