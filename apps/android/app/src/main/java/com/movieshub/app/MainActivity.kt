@@ -29,7 +29,6 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -143,6 +142,7 @@ private fun MoviesHubApp() {
     var media by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         delay(1400)
@@ -185,9 +185,15 @@ private fun MoviesHubApp() {
                         Screen.SEARCH -> SearchScreen(
                             searchText, { searchText = it }, media,
                             onSearch = {
-                                loading = true
-                                error = null
-                                // The public search route is called only after the user submits a query.
+                                if (searchText.trim().length >= 2) {
+                                    scope.launch {
+                                        loading = true
+                                        runCatching { MoviesHubApi.search(searchText.trim()) }
+                                            .onSuccess { media = it; error = null }
+                                            .onFailure { error = "Recherche indisponible pour le moment" }
+                                        loading = false
+                                    }
+                                }
                             },
                             onSelect = { selected = it; screen = Screen.DETAIL }
                         )
@@ -403,7 +409,13 @@ private fun PlayerScreen(item: MediaItem?, onBack: () -> Unit) {
         }
         Text("Le lecteur Media3 sera connecté aux versions vidéo publiées.", color = Muted, modifier = Modifier.padding(16.dp))
         Text("Qualité vidéo", color = Color.White, fontWeight = FontWeight.Bold)
-        FilterChips("720p") {}
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("480p", "720p", "1080p").forEach { quality ->
+                FilterChip(selected = quality == "720p", onClick = {}, label = { Text(quality) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Black, labelColor = Color.White),
+                    border = null)
+            }
+        }
         Text("Audio et sous-titres seront proposés selon les pistes disponibles.", color = Muted, fontSize = 12.sp)
     }
 }
@@ -424,7 +436,13 @@ private fun ShareScreen() {
     var mode by remember { mutableStateOf("Envoyer") }
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Header("Partage")
-        FilterChips(mode) { mode = it }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf("Envoyer", "Recevoir").forEach { option ->
+                FilterChip(selected = mode == option, onClick = { mode = option }, label = { Text(option) },
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Gold, selectedLabelColor = Black, labelColor = Color.White),
+                    border = null)
+            }
+        }
         Spacer(Modifier.height(35.dp))
         Icon(Icons.Default.Devices, null, tint = Gold, modifier = Modifier.size(72.dp))
         Spacer(Modifier.height(18.dp))
