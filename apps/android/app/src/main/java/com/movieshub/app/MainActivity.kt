@@ -42,6 +42,9 @@ import androidx.media3.common.MediaItem as PlayerMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,7 +54,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -906,7 +908,7 @@ private fun AuthScreen(
         }
         OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Adresse e-mail") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(10.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Mot de passe") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Mot de passe") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
         if (register) Text("8 caractères minimum.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
         Spacer(Modifier.height(18.dp))
