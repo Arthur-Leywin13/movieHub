@@ -1,6 +1,7 @@
 package com.movieshub.app
 
 import android.os.Bundle
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -21,15 +22,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.media3.common.MediaItem as PlayerMediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -117,7 +126,7 @@ private object MoviesHubApi {
 
     private fun parseItem(obj: JSONObject): MediaItem {
         val id = obj.optString("id", obj.optString("slug", obj.optString("title", "item")))
-        val posterObject = obj.optJSONObject("primaryPoster") ?: obj.optJSONObject("poster")
+        val source = obj.optJSONObject("content") ?: obj.optJSONObject("data") ?: obj\n        val posterObject = source.optJSONObject("primaryPoster") ?: source.optJSONObject("poster")\n        val trailerObject = source.optJSONObject("primaryTrailer") ?: source.optJSONObject("trailer")\n        val trailerUrl = source.optString("trailerUrl").takeIf { it.startsWith("https://") }\n            ?: trailerObject?.optString("url")?.takeIf { it.startsWith("https://") }
         val poster = obj.optString("posterUrl").takeIf { it.startsWith("http") }
             ?: obj.optString("imageUrl").takeIf { it.startsWith("http") }
             ?: posterObject?.optString("url")?.takeIf { it.startsWith("http") }
@@ -137,7 +146,7 @@ private object MoviesHubApi {
 private fun MoviesHubApp() {
     var screen by remember { mutableStateOf(Screen.HOME) }
     var splash by remember { mutableStateOf(true) }
-    var selected by remember { mutableStateOf<MediaItem?>(null) }
+    var selected by remember { mutableStateOf<MediaItem?>(null) }\n    var detailLoading by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf("Tous") }
     var media by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -191,7 +200,7 @@ private fun MoviesHubApp() {
                             },
                             onCategories = { screen = Screen.CATEGORIES },
                             onSearch = { screen = Screen.SEARCH },
-                            onSelect = { selected = it; screen = Screen.DETAIL }
+                            onSelect = { selected = it; screen = Screen.DETAIL; detailLoading = true; scope.launch { MoviesHubApi.detail(it.slug)?.let { fresh -> selected = fresh }; detailLoading = false } }
                         )
                         Screen.CATEGORIES -> CategoriesScreen(
                             activeFilter, onFilter = { activeFilter = it },
@@ -391,7 +400,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, media: List<M
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, onBack: () -> Unit, onPlay: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, onBack: () -> Unit, onPlay: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = Color.White) }
@@ -402,7 +411,7 @@ private fun DetailScreen(item: MediaItem?, onBack: () -> Unit, onPlay: () -> Uni
             Text(item?.title ?: "Contenu", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
             Text(listOf(item?.type ?: "Film", item?.year ?: "").filter { it.isNotBlank() }.joinToString(" • "), color = Gold)
             Spacer(Modifier.height(12.dp))
-            Text(item?.description?.ifBlank { "La description sera affichée à partir des métadonnées du catalogue." } ?: "Les informations du contenu seront chargées depuis MovieHub.", color = Muted)
+            if (loading) LinearProgressIndicator(color = Gold, modifier = Modifier.fillMaxWidth())\n            Text(item?.description?.ifBlank { "La description sera affichée à partir des métadonnées du catalogue." } ?: "Les informations du contenu seront chargées depuis MovieHub.", color = Muted)
             Spacer(Modifier.height(22.dp))
             Button(onClick = onPlay, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Black)) {
                 Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Voir la bande-annonce")
@@ -498,4 +507,57 @@ private fun ProfileScreen() {
 @Composable
 private fun EmptyMessage(message: String) {
     Text(message, color = Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(22.dp))
+}@Composable
+private fun PlayerScreen(item: MediaItem?, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val videoUrl = item?.trailerUrl
+
+    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = Color.White) }
+            Text(item?.title ?: "Lecteur vidéo", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+        if (videoUrl.isNullOrBlank()) {
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF171D26)), contentAlignment = Alignment.Center) {
+                Text("Aucune bande-annonce publiée pour ce contenu.", color = Muted)
+            }
+        } else {
+            val player = remember(videoUrl) {
+                ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(PlayerMediaItem.fromUri(videoUrl))
+                    prepare()
+                    playWhenReady = true
+                }
+            }
+            DisposableEffect(player, lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    when (event) {
+                        Lifecycle.Event.ON_PAUSE -> player.pause()
+                        Lifecycle.Event.ON_RESUME -> if (player.playbackState != androidx.media3.common.Player.STATE_ENDED) player.play()
+                        else -> Unit
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                    player.release()
+                }
+            }
+            AndroidView(
+                factory = { viewContext ->
+                    PlayerView(viewContext).apply {
+                        this.player = player
+                        useController = true
+                        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    }
+                },
+                update = { it.player = player },
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))
+            )
+        }
+        Text("Lecteur Media3 • Bande-annonce", color = Gold, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
+        Text("La lecture des films complets nécessite une session connectée et un lien de téléchargement temporaire autorisé par l'API.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+    }
 }
+
