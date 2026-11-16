@@ -57,7 +57,7 @@ private data class MoviePalette(
     val text: Color
 )
 private val LocalMoviePalette = staticCompositionLocalOf {
-    MoviePalette(Color(0xFF050608), Color(0xFF11151B), Color(0xFFFFC94A), Color(0xFF9AA1AC), UiColors.text)
+    MoviePalette(Color(0xFF050608), Color(0xFF11151B), Color(0xFFFFC94A), Color(0xFF9AA1AC), Color.White)
 }
 private object UiColors {
     val background: Color @Composable get() = LocalMoviePalette.current.background
@@ -208,9 +208,9 @@ private fun MoviesHubApp() {
     val systemDark = isSystemInDarkTheme()
     val useDark = when (themeMode) { "Clair" -> false; "Système" -> systemDark; else -> true }
     val palette = if (useDark) {
-        MoviePalette(Color(0xFF050608), Color(0xFF11151B), Color(0xFFFFC94A), Color(0xFF9AA1AC), UiColors.text)
+        MoviePalette(Color(0xFF050608), Color(0xFF11151B), Color(0xFFFFC94A), Color(0xFF9AA1AC), Color.White)
     } else {
-        MoviePalette(Color(0xFFF4F1E9), UiColors.text, Color(0xFF9A6500), Color(0xFF68645C), Color(0xFF191919))
+        MoviePalette(Color(0xFFF4F1E9), Color.White, Color(0xFF9A6500), Color(0xFF68645C), Color(0xFF191919))
     }
     CompositionLocalProvider(LocalMoviePalette provides palette) {
     MaterialTheme(colorScheme = if (useDark) darkColorScheme(
@@ -218,7 +218,7 @@ private fun MoviesHubApp() {
         onPrimary = palette.background, onBackground = palette.text, onSurface = palette.text
     ) else lightColorScheme(
         primary = palette.accent, background = palette.background, surface = palette.panel,
-        onPrimary = UiColors.text, onBackground = palette.text, onSurface = palette.text
+        onPrimary = Color.White, onBackground = palette.text, onSurface = palette.text
     )) {
         if (splash) {
             SplashScreen()
