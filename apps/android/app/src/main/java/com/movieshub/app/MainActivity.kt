@@ -340,7 +340,7 @@ private fun BottomNavigationBar(screen: Screen, onNavigate: (Screen) -> Unit) {
     NavigationBar(containerColor = Color(0xFF090B0F), contentColor = UiColors.accent) {
         val entries = listOf(
             Triple(Screen.HOME, "Accueil", Icons.Default.Home),
-            Triple(Screen.CATEGORIES, "Catégories", Icons.Default.Category),
+            Triple(Screen.CATEGORIES, "Catégories", Icons.Default.GridView),
             Triple(Screen.DOWNLOADS, "Téléchargements", Icons.Default.Download),
             Triple(Screen.PROFILE, "Profil", Icons.Default.Person)
         )
