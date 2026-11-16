@@ -14,6 +14,7 @@ export class PostgresRateLimiter implements RateLimiter {
   private readonly max: number;
   private readonly windowMs: number;
   private readonly namespace: string;
+  private callsSinceCleanup = 0;
 
   constructor(db: PrismaClient, pepper: string, opts: { max: number; windowMs: number; namespace: string }) {
     if (!Number.isSafeInteger(opts.max) || opts.max < 1) throw new RangeError('max doit être un entier positif');
@@ -34,10 +35,7 @@ export class PostgresRateLimiter implements RateLimiter {
   async assert(value: string): Promise<void> {
     const key = this.key(value);
     const rows = await this.db.$queryRawUnsafe<Array<{ hitCount: number; windowStartedAt: Date }>>(
-      `WITH expired AS (
-         DELETE FROM "AuthRateLimitBucket" WHERE "expiresAt" <= NOW()
-       )
-       INSERT INTO "AuthRateLimitBucket" ("bucketKey", "windowStartedAt", "hitCount", "expiresAt")
+      `INSERT INTO "AuthRateLimitBucket" ("bucketKey", "windowStartedAt", "hitCount", "expiresAt")
        VALUES ($1, NOW(), 1, NOW() + ($2 * INTERVAL '1 millisecond'))
        ON CONFLICT ("bucketKey") DO UPDATE SET
          "hitCount" = CASE
@@ -60,6 +58,18 @@ export class PostgresRateLimiter implements RateLimiter {
     );
     const row = rows[0];
     if (!row) throw new Error('Le limiteur PostgreSQL n’a retourné aucun résultat');
+    this.callsSinceCleanup += 1;
+    if (this.callsSinceCleanup >= 100) {
+      this.callsSinceCleanup = 0;
+      await this.db.$executeRawUnsafe(
+        `DELETE FROM "AuthRateLimitBucket"
+         WHERE ctid IN (
+           SELECT ctid FROM "AuthRateLimitBucket"
+           WHERE "expiresAt" <= NOW()
+           LIMIT 500
+         )`,
+      );
+    }
     if (row.hitCount > this.max) {
       const retryAfterSeconds = Math.max(1, Math.ceil((row.windowStartedAt.getTime() + this.windowMs - Date.now()) / 1000));
       throw new RateLimitedError(`Trop de tentatives. Réessayez dans ${retryAfterSeconds} s.`);
