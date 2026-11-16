@@ -21,6 +21,7 @@ import { UserDataService } from './user/service.ts';
 import { ScheduledPublicationService } from './scheduler/service.ts';
 import { NotificationService } from './notifications/service.ts';
 import { ContentWithdrawalService } from './withdrawals/service.ts';
+import { PostgresRateLimiter } from './infra/postgres-rate-limiter.ts';
 
 async function main(): Promise<void> {
   let env;
@@ -41,7 +42,15 @@ async function main(): Promise<void> {
     consoleLogger.info('Administrateur initial', { result });
   }
   const auth = new AuthService(
-    { users, sessions: new PrismaSessionRepo(prisma) },
+    {
+      users,
+      sessions: new PrismaSessionRepo(prisma),
+      rateLimiters: {
+        loginIp: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 30, windowMs: 15 * 60_000, namespace: 'login-ip' }),
+        loginEmail: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 5, windowMs: 15 * 60_000, namespace: 'login-email' }),
+        registerIp: new PostgresRateLimiter(prisma, env.jwtRefreshSecret, { max: 10, windowMs: 60 * 60_000, namespace: 'register-ip' }),
+      },
+    },
     // JWT_REFRESH_SECRET sert de clé HMAC pour hacher les refresh tokens en base.
     { accessSecret: env.jwtAccessSecret, refreshPepper: env.jwtRefreshSecret },
   );

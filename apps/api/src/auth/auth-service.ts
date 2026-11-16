@@ -13,7 +13,7 @@ import {
   verifyPassword,
   type ScryptParams,
 } from '../security/password.ts';
-import { SlidingWindowLimiter } from '../security/rate-limit.ts';
+import { SlidingWindowLimiter, type RateLimiter } from '../security/rate-limit.ts';
 import { generateRefreshToken, hashRefreshToken } from '../security/tokens.ts';
 import type { PlatformName, SessionRepo, UserRecord, UserRepo } from '../ports.ts';
 
@@ -63,11 +63,11 @@ export class AuthService {
   private readonly users: UserRepo;
   private readonly sessions: SessionRepo;
   private readonly cfg: Required<Omit<AuthServiceConfig, 'passwordParams'>> & { passwordParams: ScryptParams };
-  private readonly loginIp: SlidingWindowLimiter;
-  private readonly loginEmail: SlidingWindowLimiter;
-  private readonly registerIp: SlidingWindowLimiter;
+  private readonly loginIp: RateLimiter;
+  private readonly loginEmail: RateLimiter;
+  private readonly registerIp: RateLimiter;
 
-  constructor(deps: { users: UserRepo; sessions: SessionRepo }, cfg: AuthServiceConfig) {
+  constructor(deps: { users: UserRepo; sessions: SessionRepo; rateLimiters?: { loginIp: RateLimiter; loginEmail: RateLimiter; registerIp: RateLimiter } }, cfg: AuthServiceConfig) {
     this.users = deps.users;
     this.sessions = deps.sessions;
     this.cfg = {
@@ -81,9 +81,9 @@ export class AuthService {
       now: cfg.now ?? (() => new Date()),
     };
     const clock = (): number => this.cfg.now().getTime();
-    this.loginIp = new SlidingWindowLimiter({ max: 30, windowMs: 15 * 60_000, now: clock });
-    this.loginEmail = new SlidingWindowLimiter({ max: 5, windowMs: 15 * 60_000, now: clock });
-    this.registerIp = new SlidingWindowLimiter({ max: 10, windowMs: 60 * 60_000, now: clock });
+    this.loginIp = deps.rateLimiters?.loginIp ?? new SlidingWindowLimiter({ max: 30, windowMs: 15 * 60_000, now: clock });
+    this.loginEmail = deps.rateLimiters?.loginEmail ?? new SlidingWindowLimiter({ max: 5, windowMs: 15 * 60_000, now: clock });
+    this.registerIp = deps.rateLimiters?.registerIp ?? new SlidingWindowLimiter({ max: 10, windowMs: 60 * 60_000, now: clock });
   }
 
   private async issueSession(user: UserRecord, ctx: ClientContext): Promise<AuthResult> {
@@ -111,7 +111,7 @@ export class AuthService {
   }
 
   async register(input: { email: string; password: string; displayName: string }, ctx: ClientContext): Promise<AuthResult> {
-    this.registerIp.assert(`ip:${ctx.ip}`);
+    await this.registerIp.assert(`ip:${ctx.ip}`);
     assertPasswordPolicy(input.password);
     const email = input.email.trim().toLowerCase();
     if (await this.users.findByEmail(email)) throw new ConflictError('Cet e-mail est déjà utilisé');
@@ -122,8 +122,8 @@ export class AuthService {
 
   async login(input: { email: string; password: string }, ctx: ClientContext): Promise<AuthResult> {
     const email = input.email.trim().toLowerCase();
-    this.loginIp.assert(`ip:${ctx.ip}`);
-    this.loginEmail.assert(`email:${email}`);
+    await this.loginIp.assert(`ip:${ctx.ip}`);
+    await this.loginEmail.assert(`email:${email}`);
 
     const user = await this.users.findByEmail(email);
     if (!user) {
@@ -135,7 +135,7 @@ export class AuthService {
     }
     if (user.status === 'SUSPENDED') throw new ForbiddenError('Compte suspendu');
 
-    this.loginEmail.reset(`email:${email}`);
+    await this.loginEmail.reset(`email:${email}`);
     if (needsRehash(user.passwordHash, this.cfg.passwordParams)) {
       await this.users.updatePasswordHash(user.id, await hashPassword(input.password, this.cfg.passwordParams));
     }
