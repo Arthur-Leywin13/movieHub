@@ -2,7 +2,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="false"
-        android:label="MoviesHub"
+        android:label="MovieHub"
+        android:icon="@drawable/moviehub_logo"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true">
