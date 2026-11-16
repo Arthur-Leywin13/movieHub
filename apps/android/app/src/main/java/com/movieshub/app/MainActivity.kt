@@ -152,7 +152,8 @@ private object MoviesHubApi {
 private fun MoviesHubApp() {
     var screen by remember { mutableStateOf(Screen.HOME) }
     var splash by remember { mutableStateOf(true) }
-    var selected by remember { mutableStateOf<MediaItem?>(null) }\n    var detailLoading by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<MediaItem?>(null) }
+    var detailLoading by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf("Tous") }
     var media by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
