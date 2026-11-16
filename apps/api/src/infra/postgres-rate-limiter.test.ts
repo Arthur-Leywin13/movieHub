@@ -35,14 +35,14 @@ test('PostgreSQL limiter uses an atomic upsert and never stores the raw identifi
 
 test('PostgreSQL limiter blocks when the atomic counter exceeds the limit', async () => {
   const { db } = fakeDb(6);
-  const limiter = new PostgresRateLimiter(db, 'p'.repeat(40), { max: 5, windowMs: 60_000 });
+  const limiter = new PostgresRateLimiter(db, 'p'.repeat(40), { max: 5, windowMs: 60_000, namespace: 'test' });
 
   await assert.rejects(limiter.assert('ip:127.0.0.1'), RateLimitedError);
 });
 
 test('PostgreSQL limiter validates its configuration', () => {
   const { db } = fakeDb(1);
-  assert.throws(() => new PostgresRateLimiter(db, 'short', { max: 5, windowMs: 60_000 }), RangeError);
+  assert.throws(() => new PostgresRateLimiter(db, 'short', { max: 5, windowMs: 60_000, namespace: 'test' }), RangeError);
   assert.throws(() => new PostgresRateLimiter(db, 'p'.repeat(40), { max: 0, windowMs: 60_000, namespace: 'test' }), RangeError);
   assert.throws(() => new PostgresRateLimiter(db, 'p'.repeat(40), { max: 5, windowMs: 0, namespace: 'test' }), RangeError);
 });
