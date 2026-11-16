@@ -23,7 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -99,7 +99,7 @@ private object MoviesHubApi {
     }
 
     suspend fun detail(slug: String): MediaItem? = withContext(Dispatchers.IO) {
-        runCatching { parseItem(JSONObject(get("/contents/$slug"))) }.getOrNull()
+        runCatching { parseItem(JSONObject(get("/contents/${java.net.URLEncoder.encode(slug, "UTF-8")}"))) }.getOrNull()
     }
 
     private fun parseMedia(raw: String): List<MediaItem> {
