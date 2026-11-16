@@ -145,3 +145,17 @@ SELECT movieshub_add_check('AdFreeEntitlement', 'AdFreeEntitlement_payment_field
   '"source" <> ''PAYMENT'' OR "sourceTransactionId" IS NOT NULL');
 
 DROP FUNCTION movieshub_add_check(text, text, text);
+
+-- ---------------------------------------------------------------------------
+-- 3. Limitation des tentatives d'authentification (partagée entre instances)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS "AuthRateLimitBucket" (
+  "bucketKey" text PRIMARY KEY,
+  "windowStartedAt" timestamptz NOT NULL,
+  "hitCount" integer NOT NULL CHECK ("hitCount" >= 1),
+  "expiresAt" timestamptz NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS "AuthRateLimitBucket_expiresAt_idx"
+  ON "AuthRateLimitBucket" ("expiresAt");
