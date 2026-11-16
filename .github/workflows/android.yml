@@ -28,3 +28,10 @@ jobs:
           gradle-version: "8.9"
       - name: Assemble debug APK
         run: gradle -p apps/android assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MovieHub-debug-APK
+          path: apps/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
