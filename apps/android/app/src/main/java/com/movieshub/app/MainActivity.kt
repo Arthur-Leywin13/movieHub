@@ -30,23 +30,15 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem as PlayerMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import androidx.media3.common.MediaItem as PlayerMediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -134,19 +126,24 @@ private object MoviesHubApi {
     }
 
     private fun parseItem(obj: JSONObject): MediaItem {
-        val id = obj.optString("id", obj.optString("slug", obj.optString("title", "item")))
-        val source = obj.optJSONObject("content") ?: obj.optJSONObject("data") ?: obj\n        val posterObject = source.optJSONObject("primaryPoster") ?: source.optJSONObject("poster")\n        val trailerObject = source.optJSONObject("primaryTrailer") ?: source.optJSONObject("trailer")\n        val trailerUrl = source.optString("trailerUrl").takeIf { it.startsWith("https://") }\n            ?: trailerObject?.optString("url")?.takeIf { it.startsWith("https://") }
-        val poster = obj.optString("posterUrl").takeIf { it.startsWith("http") }
-            ?: obj.optString("imageUrl").takeIf { it.startsWith("http") }
+        val source = obj.optJSONObject("content") ?: obj.optJSONObject("data") ?: obj
+        val id = source.optString("id", source.optString("slug", source.optString("title", "item")))
+        val posterObject = source.optJSONObject("primaryPoster") ?: source.optJSONObject("poster")
+        val trailerObject = source.optJSONObject("primaryTrailer") ?: source.optJSONObject("trailer")
+        val trailerUrl = source.optString("trailerUrl").takeIf { it.startsWith("https://") }
+            ?: trailerObject?.optString("url")?.takeIf { it.startsWith("https://") }
+        val poster = source.optString("posterUrl").takeIf { it.startsWith("http") }
+            ?: source.optString("imageUrl").takeIf { it.startsWith("http") }
             ?: posterObject?.optString("url")?.takeIf { it.startsWith("http") }
         return MediaItem(
             id = id,
-            slug = obj.optString("slug", id),
-            title = obj.optString("title", "Sans titre"),
-            type = obj.optString("type", "Film"),
-            year = obj.optString("year", ""),
-            description = obj.optString("description", ""),
-            poster = poster
+            slug = source.optString("slug", id),
+            title = source.optString("title", "Sans titre"),
+            type = source.optString("type", "Film"),
+            year = source.optString("year", ""),
+            description = source.optString("description", ""),
+            poster = poster,
+            trailerUrl = trailerUrl
         )
     }
 }
@@ -214,7 +211,15 @@ private fun MoviesHubApp() {
                         Screen.CATEGORIES -> CategoriesScreen(
                             activeFilter, onFilter = { activeFilter = it },
                             onBack = { screen = Screen.HOME },
-                            onSelect = { selected = it; screen = Screen.DETAIL }
+                            onSelect = {
+                                selected = it
+                                screen = Screen.DETAIL
+                                detailLoading = true
+                                scope.launch {
+                                    MoviesHubApi.detail(it.slug)?.let { fresh -> selected = fresh }
+                                    detailLoading = false
+                                }
+                            }
                         )
                         Screen.SEARCH -> SearchScreen(
                             searchText, { searchText = it }, media,
@@ -229,9 +234,17 @@ private fun MoviesHubApp() {
                                     }
                                 }
                             },
-                            onSelect = { selected = it; screen = Screen.DETAIL }
+                            onSelect = {
+                                selected = it
+                                screen = Screen.DETAIL
+                                detailLoading = true
+                                scope.launch {
+                                    MoviesHubApi.detail(it.slug)?.let { fresh -> selected = fresh }
+                                    detailLoading = false
+                                }
+                            }
                         )
-                        Screen.DETAIL -> DetailScreen(selected, onBack = { screen = Screen.HOME }, onPlay = { screen = Screen.PLAYER })
+                        Screen.DETAIL -> DetailScreen(selected, detailLoading, onBack = { screen = Screen.HOME }, onPlay = { screen = Screen.PLAYER })
                         Screen.PLAYER -> PlayerScreen(selected, onBack = { screen = Screen.DETAIL })
                         Screen.DOWNLOADS -> DownloadsScreen()
                         Screen.SHARE -> ShareScreen()
