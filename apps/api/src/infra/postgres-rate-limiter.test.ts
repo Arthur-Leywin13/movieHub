@@ -27,7 +27,6 @@ test('PostgreSQL limiter uses an atomic upsert and never stores the raw identifi
 
   assert.equal(calls.length, 1);
   assert.match(calls[0]?.query ?? '', /ON CONFLICT/);
-  assert.match(calls[0]?.query ?? '', /DELETE FROM "AuthRateLimitBucket"/);
   assert.notEqual(calls[0]?.values[0], 'email:person@example.com');
   assert.equal(calls[0]?.values[1], 60_000);
   assert.equal(calls[0]?.values[2], 6);
@@ -45,4 +44,15 @@ test('PostgreSQL limiter validates its configuration', () => {
   assert.throws(() => new PostgresRateLimiter(db, 'short', { max: 5, windowMs: 60_000, namespace: 'test' }), RangeError);
   assert.throws(() => new PostgresRateLimiter(db, 'p'.repeat(40), { max: 0, windowMs: 60_000, namespace: 'test' }), RangeError);
   assert.throws(() => new PostgresRateLimiter(db, 'p'.repeat(40), { max: 5, windowMs: 0, namespace: 'test' }), RangeError);
+});
+
+test('nettoie les anciens buckets par petits lots, pas à chaque tentative', async () => {
+  const { db, calls } = fakeDb(1);
+  const limiter = new PostgresRateLimiter(db, 'p'.repeat(40), { max: 5, windowMs: 60_000, namespace: 'test' });
+
+  for (let i = 0; i < 100; i++) await limiter.assert(`ip:${i}`);
+
+  assert.equal(calls.length, 101);
+  assert.match(calls[100]?.query ?? '', /DELETE FROM "AuthRateLimitBucket"/);
+  assert.match(calls[100]?.query ?? '', /LIMIT 500/);
 });
