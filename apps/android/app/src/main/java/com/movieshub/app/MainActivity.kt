@@ -12,6 +12,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -255,7 +257,17 @@ private fun MoviesHubApp() {
                             onSelect = { selected = it; navigate(Screen.DETAIL); detailLoading = true; scope.launch { MoviesHubApi.detail(it.slug)?.let { fresh -> selected = fresh }; detailLoading = false } }
                         )
                         Screen.CATEGORIES -> CategoriesScreen(
-                            activeFilter, onFilter = { activeFilter = it },
+                            activeFilter, media, loading,
+                            onFilter = { category ->
+                                activeFilter = category
+                                scope.launch {
+                                    loading = true
+                                    runCatching { MoviesHubApi.search(category) }
+                                        .onSuccess { media = it; error = null }
+                                        .onFailure { error = "Impossible de charger cette catégorie" }
+                                    loading = false
+                                }
+                            },
                             onBack = { goBack() },
                             onSelect = {
                                 selected = it
@@ -453,19 +465,61 @@ private fun MediaPoster(item: MediaItem, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CategoriesScreen(active: String, onFilter: (String) -> Unit, onBack: () -> Unit, onSelect: (MediaItem) -> Unit) {
+private fun CategoriesScreen(
+    active: String,
+    media: List<MediaItem>,
+    loading: Boolean,
+    onFilter: (String) -> Unit,
+    onBack: () -> Unit,
+    onSelect: (MediaItem) -> Unit
+) {
+    val categories = listOf("Action", "Aventure", "Comédie", "Drame", "Horreur", "Science-fiction", "Fantastique", "Animation")
     Column(Modifier.fillMaxSize()) {
-        Header("Catégories", onCategories = onBack)
-        FilterChips(active, onFilter)
-        val categories = listOf("Action", "Aventure", "Comédie", "Drame", "Horreur", "Science-fiction", "Fantastique", "Animation")
-        LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            items(categories) { category ->
-                Row(Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(12.dp)).background(
-                    Brush.horizontalGradient(listOf(Color(0xFF202B38), Color(0xFF17191E)))
-                ).clickable { onFilter(category) }.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(category, color = UiColors.text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Explorer", color = UiColors.text, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Retour", tint = UiColors.text) }
+        }
+        if (active == "Tous") {
+            Text("Choisis un univers", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                contentPadding = PaddingValues(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(categories.size) { index ->
+                    val category = categories[index]
+                    Column(
+                        Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(listOf(Color(0xFF302719), UiColors.panel)))
+                            .clickable { onFilter(category) }.padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Icon(
+                            when (category) {
+                                "Action" -> Icons.Default.Bolt
+                                "Aventure" -> Icons.Default.Explore
+                                "Comédie" -> Icons.Default.TheaterComedy
+                                "Drame" -> Icons.Default.Theaters
+                                "Horreur" -> Icons.Default.DarkMode
+                                "Science-fiction" -> Icons.Default.RocketLaunch
+                                "Fantastique" -> Icons.Default.AutoAwesome
+                                else -> Icons.Default.Animation
+                            }, null, tint = UiColors.accent, modifier = Modifier.size(25.dp)
+                        )
+                        Text(category, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
                 }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(active, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onFilter("Tous") }) { Text("Toutes", color = UiColors.accent) }
+            }
+            if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            if (!loading && media.isEmpty()) EmptyMessage("Aucun résultat pour cette catégorie pour le moment.")
+            LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
+                items(media) { item -> MediaPoster(item) { onSelect(item) } }
             }
         }
     }
