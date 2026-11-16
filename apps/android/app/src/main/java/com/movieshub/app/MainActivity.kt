@@ -174,6 +174,21 @@ private fun MoviesHubApp() {
                     when (screen) {
                         Screen.HOME -> HomeScreen(
                             media, loading, error,
+                            onFilterChange = { filter ->
+                                val type = when (filter) {
+                                    "Films" -> "MOVIE"
+                                    "Séries" -> "SERIES"
+                                    "Animes" -> "ANIME"
+                                    else -> null
+                                }
+                                scope.launch {
+                                    loading = true
+                                    runCatching { if (type == null) MoviesHubApi.home() else MoviesHubApi.contents(type) }
+                                        .onSuccess { media = it; error = null }
+                                        .onFailure { error = "Impossible de charger cette catégorie" }
+                                    loading = false
+                                }
+                            },
                             onCategories = { screen = Screen.CATEGORIES },
                             onSearch = { screen = Screen.SEARCH },
                             onSelect = { selected = it; screen = Screen.DETAIL }
@@ -281,12 +296,13 @@ private fun FilterChips(active: String, onSelect: (String) -> Unit) {
 @Composable
 private fun HomeScreen(
     media: List<MediaItem>, loading: Boolean, error: String?,
+    onFilterChange: (String) -> Unit,
     onCategories: () -> Unit, onSearch: () -> Unit, onSelect: (MediaItem) -> Unit
 ) {
     var filter by remember { mutableStateOf("Tous") }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
         item { Header(onCategories = onCategories, onSearch = onSearch) }
-        item { FilterChips(filter) { filter = it } }
+        item { FilterChips(filter) { filter = it; onFilterChange(it) } }
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                 Box(Modifier.fillMaxWidth().height(205.dp).clip(RoundedCornerShape(18.dp)).background(
