@@ -918,18 +918,39 @@ private fun SectionTitle(title: String, action: String) {
 
 @Composable
 private fun MediaPoster(item: MediaItem, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).clip(RoundedCornerShape(12.dp)).background(UiColors.panel).clickable(onClick = onClick).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (item.poster != null) {
-            AsyncImage(item.poster, contentDescription = item.title, modifier = Modifier.size(68.dp, 92.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-        } else {
-            Box(Modifier.size(68.dp, 92.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF242A33)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Movie, null, tint = UiColors.accent, modifier = Modifier.size(30.dp))
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .background(UiColors.panel)
+            .clickable(onClick = onClick)
+            .padding(9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(76.dp, 104.dp).clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF202630))
+        ) {
+            if (!item.poster.isNullOrBlank()) {
+                AsyncImage(item.poster, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Movie, null, tint = UiColors.accent, modifier = Modifier.size(30.dp))
+                }
             }
         }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(item.title, color = UiColors.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(listOf(item.type, item.year).filter { it.isNotBlank() }.joinToString(" • "), color = UiColors.muted, fontSize = 12.sp)
-            if (item.description.isNotBlank()) Text(item.description, color = UiColors.muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column(
+            Modifier.weight(1f).padding(start = 13.dp, end = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(item.title, color = UiColors.text, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOf(item.type, item.year).filter { it.isNotBlank() }.joinToString("  •  "),
+                color = UiColors.accent, fontSize = 11.sp, fontWeight = FontWeight.Medium
+            )
+            if (item.description.isNotBlank()) {
+                Text(item.description, color = UiColors.muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Text("Voir la fiche", color = UiColors.text.copy(alpha = .75f), fontSize = 10.sp)
         }
         Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
     }
@@ -1022,29 +1043,94 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, media: List<M
 
 @Composable
 private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
-            Text(item?.title ?: "Détails", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Box(
+            Modifier.fillMaxWidth().height(390.dp)
+                .background(Color(0xFF10141B))
+        ) {
+            if (!item?.poster.isNullOrBlank()) {
+                AsyncImage(
+                    item?.poster,
+                    item?.title,
+                    Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Movie, null, tint = UiColors.accent, modifier = Modifier.size(70.dp))
+                }
+            }
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0.0f to Color(0x55000000),
+                        0.45f to Color(0x33000000),
+                        1.0f to Color(0xFF050608)
+                    )
+                )
+            )
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
+                    .clip(RoundedCornerShape(50)).background(Color(0x99090B0F))
+            ) {
+                Icon(Icons.Default.ArrowBack, "Retour", tint = Color.White)
+            }
+            Column(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Text("FICHE DU CONTENU", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
+                Text(item?.title ?: "Détails", color = Color.White, fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    listOf(item?.type ?: "Film", item?.year ?: "").filter { it.isNotBlank() }.joinToString("  •  "),
+                    color = Color.White.copy(alpha = .8f), fontSize = 12.sp
+                )
+            }
         }
-        if (item?.poster != null) AsyncImage(item.poster, null, modifier = Modifier.fillMaxWidth().height(250.dp), contentScale = ContentScale.Crop)
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(18.dp)) {
-            Text(item?.title ?: "Contenu", color = UiColors.text, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-            Text(listOf(item?.type ?: "Film", item?.year ?: "").filter { it.isNotBlank() }.joinToString(" • "), color = UiColors.accent)
-            Spacer(Modifier.height(12.dp))
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
             if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth())
-            Text(item?.description?.ifBlank { "La description sera affichée à partir des métadonnées du catalogue." } ?: "Les informations du contenu seront chargées depuis MovieHub.", color = UiColors.muted)
+            Text("Synopsis", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                item?.description?.ifBlank { "La description sera affichée à partir des métadonnées du catalogue." }
+                    ?: "Les informations du contenu seront chargées depuis MovieHub.",
+                color = UiColors.muted, fontSize = 13.sp, lineHeight = 20.sp
+            )
             Spacer(Modifier.height(22.dp))
-            Button(onClick = onPlay, enabled = !item?.trailerUrl.isNullOrBlank(), modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background, disabledContainerColor = Color(0xFF343434), disabledContentColor = UiColors.muted)) {
-                Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(if (item?.trailerUrl.isNullOrBlank()) "Bande-annonce indisponible" else "Voir la bande-annonce")
+            Button(
+                onClick = onPlay,
+                enabled = !item?.trailerUrl.isNullOrBlank(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(13.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = UiColors.accent,
+                    contentColor = Color(0xFF100D07),
+                    disabledContainerColor = UiColors.panel,
+                    disabledContentColor = UiColors.muted
+                )
+            ) {
+                Icon(Icons.Default.PlayArrow, null)
+                Spacer(Modifier.width(7.dp))
+                Text(if (item?.trailerUrl.isNullOrBlank()) "Bande-annonce indisponible" else "Voir la bande-annonce", fontWeight = FontWeight.Bold)
             }
-            OutlinedButton(onClick = onFavorite, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
+            Spacer(Modifier.height(9.dp))
+            OutlinedButton(
+                onClick = onFavorite,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(13.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+            ) {
                 Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
-                Spacer(Modifier.width(6.dp)); Text(if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris")
+                Spacer(Modifier.width(7.dp))
+                Text(if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris")
             }
-            OutlinedButton(onClick = {}, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
-                Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Télécharger — bientôt disponible")
-            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Le téléchargement sera disponible lorsque le service de téléchargement sera connecté à cette fiche.",
+                color = UiColors.muted, fontSize = 11.sp, lineHeight = 16.sp
+            )
+            Spacer(Modifier.height(22.dp))
         }
     }
 }
