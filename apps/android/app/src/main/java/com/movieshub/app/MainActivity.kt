@@ -687,45 +687,224 @@ private fun HomeScreen(
     onCategories: () -> Unit, onSearch: () -> Unit, onSelect: (MediaItem) -> Unit
 ) {
     var filter by remember { mutableStateOf("Tous") }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
-        item { Header(onSearch = onSearch) }
-        item { Text("Films, séries et animés à découvrir", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)) }
+    val featured = media.firstOrNull()
+    val remaining = media.drop(1)
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
         item {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(20.dp)).background(
-                    Brush.linearGradient(listOf(Color(0xFF292116), Color(0xFF11151B), Color(0xFF3B2A13)))
-                )) {
-                    media.firstOrNull()?.poster?.let { poster ->
-                        AsyncImage(poster, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.42f)
+            Row(
+                Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 14.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painterResource(R.drawable.moviehub_logo),
+                    contentDescription = "Logo MovieHub",
+                    modifier = Modifier.size(42.dp),
+                    contentScale = ContentScale.Fit
+                )
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text("MOVIEHUB", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
+                    Text("Ton prochain univers commence ici", color = UiColors.muted, fontSize = 10.sp)
+                }
+                IconButton(onClick = onSearch) {
+                    Icon(Icons.Default.Search, "Rechercher", tint = UiColors.text, modifier = Modifier.size(25.dp))
+                }
+                IconButton(onClick = onCategories) {
+                    Icon(Icons.Default.GridView, "Explorer", tint = UiColors.accent)
+                }
+            }
+        }
+        item {
+            Text(
+                "À LA UNE",
+                color = UiColors.accent,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
+                modifier = Modifier.padding(start = 18.dp, top = 18.dp, bottom = 8.dp)
+            )
+        }
+        item {
+            if (featured != null) {
+                Box(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp)
+                        .height(310.dp).clip(RoundedCornerShape(22.dp))
+                        .background(UiColors.panel)
+                ) {
+                    if (!featured.poster.isNullOrBlank()) {
+                        AsyncImage(
+                            featured.poster,
+                            contentDescription = featured.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
                     }
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xEE050608)))))
-                    Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
-                        Text("L’UNIVERS MOVIEHUB", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                        Text(media.firstOrNull()?.title ?: "Ton prochain film préféré", color = UiColors.text, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2)
-                        Text("Découvre ton prochain coup de cœur", color = UiColors.text.copy(alpha = .82f), fontSize = 12.sp)
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                0.0f to Color(0x22000000),
+                                0.35f to Color(0x44000000),
+                                1.0f to Color(0xF5050608)
+                            )
+                        )
+                    )
+                    Column(
+                        Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "SÉLECTION MOVIEHUB",
+                            color = UiColors.accent,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.8.sp
+                        )
+                        Text(
+                            featured.title,
+                            color = Color.White,
+                            fontSize = 27.sp,
+                            lineHeight = 31.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            listOf(featured.type, featured.year).filter { it.isNotBlank() }.joinToString("  •  "),
+                            color = Color.White.copy(alpha = .78f),
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            featured.description.ifBlank { "Retrouve ce contenu dans le catalogue MovieHub." },
+                            color = Color.White.copy(alpha = .78f),
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Button(
+                            onClick = { onSelect(featured) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = UiColors.accent,
+                                contentColor = Color(0xFF100D07)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Default.Info, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text("Voir les détails", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else if (loading) {
+                Box(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(250.dp)
+                        .clip(RoundedCornerShape(22.dp)).background(UiColors.panel),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = UiColors.accent)
+                }
+            } else {
+                Box(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(220.dp)
+                        .clip(RoundedCornerShape(22.dp)).background(UiColors.panel),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                        Icon(Icons.Default.Movie, null, tint = UiColors.accent, modifier = Modifier.size(42.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text("Le cinéma, à portée de main.", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            error ?: "Les nouveautés apparaîtront ici dès leur publication.",
+                            color = UiColors.muted, fontSize = 12.sp
+                        )
                     }
                 }
             }
         }
-        item { SectionTitle("Tendances", "Voir tout") }
-        if (loading) item { LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(16.dp)) }
-        if (error != null && media.isEmpty()) item { EmptyMessage(error) }
-        if (!loading && media.isEmpty() && error == null) item { EmptyMessage("Le catalogue apparaîtra ici dès que des contenus seront publiés.") }
         item {
-            androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(media.take(12)) { item ->
-                    Column(Modifier.width(132.dp).clickable { onSelect(item) }) {
-                        if (item.poster != null) AsyncImage(item.poster, contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                        else Box(Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(12.dp)).background(UiColors.panel), contentAlignment = Alignment.Center) { Icon(Icons.Default.Movie, null, tint = UiColors.accent, modifier = Modifier.size(38.dp)) }
-                        Spacer(Modifier.height(7.dp))
-                        Text(item.title, color = UiColors.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
-                        Text(item.type, color = UiColors.muted, fontSize = 11.sp)
+            Text(
+                "EXPLORER LE CATALOGUE",
+                color = UiColors.muted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.6.sp,
+                modifier = Modifier.padding(start = 18.dp, top = 22.dp, bottom = 8.dp)
+            )
+        }
+        item {
+            FilterChips(filter) {
+                filter = it
+                onFilterChange(it)
+            }
+        }
+        item { SectionTitle("Tendances", "À découvrir") }
+        if (loading && media.isEmpty()) {
+            item { LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)) }
+        }
+        if (error != null && media.isEmpty()) {
+            item { EmptyMessage(error) }
+        }
+        if (media.isNotEmpty()) {
+            item {
+                androidx.compose.foundation.lazy.LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(13.dp)
+                ) {
+                    items(media.take(14), key = { it.id }) { item ->
+                        Column(
+                            Modifier.width(142.dp).clickable { onSelect(item) },
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            Box(
+                                Modifier.fillMaxWidth().height(204.dp)
+                                    .clip(RoundedCornerShape(14.dp)).background(UiColors.panel)
+                            ) {
+                                if (!item.poster.isNullOrBlank()) {
+                                    AsyncImage(item.poster, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                } else {
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Movie, null, tint = UiColors.accent, modifier = Modifier.size(38.dp))
+                                    }
+                                }
+                                Box(
+                                    Modifier.align(Alignment.TopStart).padding(8.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xCC090B0F)).padding(horizontal = 7.dp, vertical = 4.dp)
+                                ) {
+                                    Text(item.type.uppercase(), color = UiColors.accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Text(item.title, color = UiColors.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+                            Text(item.year.ifBlank { "Découvrir" }, color = UiColors.muted, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        } else if (!loading && error == null) {
+            item { EmptyMessage("Le catalogue apparaîtra ici dès que des contenus seront publiés.") }
+        }
+        if (remaining.isNotEmpty()) {
+            item { SectionTitle("À explorer", "Catalogue") }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    remaining.take(6).forEach { item ->
+                        MediaPoster(item) { onSelect(item) }
                     }
                 }
             }
         }
-        item { SectionTitle("Animes populaires", "Explorer") }
-        item { Text("Les catégories et les contenus publiés seront chargés depuis le catalogue MovieHub.", color = UiColors.muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 12.sp) }
+        item {
+            Spacer(Modifier.height(12.dp))
+            TextButton(onClick = onCategories, modifier = Modifier.fillMaxWidth()) {
+                Text("Explorer toutes les catégories", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(6.dp))
+                Icon(Icons.Default.ArrowForward, null, tint = UiColors.accent)
+            }
+        }
     }
 }
 
