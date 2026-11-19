@@ -73,7 +73,7 @@ test('connexion obligatoire sur toutes les routes utilisateur', async () => {
   const routes: [string, string][] = [
     ['GET', '/me/favorites'], ['PUT', `/me/favorites/${UUID0}`], ['DELETE', `/me/favorites/${UUID0}`], ['GET', '/me/follows'], ['PUT', `/me/follows/${UUID0}`],
     ['GET', '/me/history'], ['PUT', '/me/history'], ['DELETE', '/me/history'], ['GET', '/me/settings'], ['PATCH', '/me/settings'],
-    ['GET', '/me/search-history'], ['POST', '/me/search-history'], ['POST', `/versions/${UUID0}/download`], ['POST', `/downloads/${UUID0}/status`],
+    ['GET', '/me/search-history'], ['POST', '/me/search-history'], ['POST', `/versions/${UUID0}/download`], ['POST', `/downloads/${UUID0}/refresh-url`], ['POST', `/downloads/${UUID0}/status`],
   ];
   for (const [m, p] of routes) assert.equal((await call(m, p, { body: m === 'GET' || m === 'DELETE' ? undefined : {} })).status, 401, `${m} ${p}`);
 });
@@ -187,6 +187,12 @@ test('téléchargement : lien signé 15 min avec nom de fichier, compteur, état
   assert.equal(typeof r.json['sizeBytes'], 'number');
   assert.equal(statOf(film.id, 'downloads'), 1);
   assert.equal(userRepo.downloads.get(r.json['downloadId'])?.appVersion, '1.4.2');
+  const renewed = await call('POST', `/downloads/${r.json['downloadId']}/refresh-url`, { token: u1.token });
+  assert.equal(renewed.status, 200);
+  assert.equal(renewed.json['downloadId'], r.json['downloadId'], 'conserve la même entrée de téléchargement');
+  assert.match(renewed.json['url'], /^https:\/\/fake\.r2\/get\//);
+  assert.equal((await call('POST', `/downloads/${r.json['downloadId']}/refresh-url`, { token: u2.token })).status, 404, 'un autre utilisateur ne peut pas renouveler le lien');
+
 
   const st = (s: string, token = u1.token, extra: J = {}) => call('POST', `/downloads/${r.json['downloadId']}/status`, { token, body: { status: s, ...extra } });
   const done = await st('COMPLETED');
