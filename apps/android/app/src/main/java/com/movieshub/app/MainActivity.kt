@@ -124,6 +124,13 @@ private object SecureSessionStore {
 
 private data class Genre(val slug: String, val name: String)
 
+private data class VideoVersion(
+    val id: String,
+    val label: String,
+    val height: Int?,
+    val durationSeconds: Int?
+)
+
 private data class MediaItem(
     val id: String,
     val title: String,
@@ -132,7 +139,8 @@ private data class MediaItem(
     val description: String = "",
     val poster: String? = null,
     val slug: String = id,
-    val trailerUrl: String? = null
+    val trailerUrl: String? = null,
+    val versions: List<VideoVersion> = emptyList()
 )
 
 private object MoviesHubApi {
@@ -228,6 +236,20 @@ private object MoviesHubApi {
         active
     }
 
+    suspend fun startPlayback(versionId: String, session: AuthSessionData): Pair<AuthSessionData, String> = withContext(Dispatchers.IO) {
+        val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
+            val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
+            val user = refreshed.getJSONObject("user")
+            AuthSessionData(
+                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
+                refreshed.getString("accessToken"),
+                refreshed.getString("refreshToken"),
+                System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
+            )
+        } else session
+        active to request("/versions/$versionId/play", "POST", bearer = active.accessToken)
+    }
+
     suspend fun logout(refreshToken: String) = withContext(Dispatchers.IO) {
         request("/auth/logout", "POST", JSONObject().put("refreshToken", refreshToken))
     }
@@ -312,6 +334,18 @@ private object MoviesHubApi {
         val poster = source.optString("posterUrl").takeIf { it.startsWith("http") }
             ?: source.optString("imageUrl").takeIf { it.startsWith("http") }
             ?: posterObject?.optString("url")?.takeIf { it.startsWith("http") }
+        val versionsArray = source.optJSONArray("versions")
+        val versions = buildList {
+            if (versionsArray != null) for (index in 0 until versionsArray.length()) {
+                val version = versionsArray.optJSONObject(index) ?: continue
+                val versionId = version.optString("id")
+                if (versionId.isBlank()) continue
+                val height = version.optInt("height").takeIf { it > 0 }
+                val label = version.optString("label").takeIf { it.isNotBlank() }
+                    ?: height?.let { "${it}p" } ?: "Version vidéo ${index + 1}"
+                add(VideoVersion(versionId, label, height, version.optInt("durationSeconds").takeIf { it > 0 }))
+            }
+        }
         return MediaItem(
             id = id,
             slug = source.optString("slug", id),
@@ -320,7 +354,8 @@ private object MoviesHubApi {
             year = source.optString("year", ""),
             description = source.optString("description", ""),
             poster = poster,
-            trailerUrl = trailerUrl
+            trailerUrl = trailerUrl,
+            versions = versions
         )
     }
 }
@@ -490,7 +525,16 @@ private fun MoviesHubApp() {
                                 }
                             }
                         )
-                        Screen.PLAYER -> PlayerScreen(selected, onBack = { goBack() })
+                        Screen.PLAYER -> PlayerScreen(
+                            item = selected,
+                            session = session,
+                            onSessionUpdate = {
+                                session = it
+                                SecureSessionStore.save(context, it)
+                            },
+                            onLogin = { navigate(Screen.AUTH) },
+                            onBack = { goBack() }
+                        )
                         Screen.DOWNLOADS -> DownloadsScreen()
                         Screen.PROFILE -> ProfileScreen(
                             session = session,
@@ -1159,7 +1203,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             Spacer(Modifier.height(22.dp))
             Button(
                 onClick = onPlay,
-                enabled = !item?.trailerUrl.isNullOrBlank(),
+                enabled = !item?.trailerUrl.isNullOrBlank() || !item?.versions.isNullOrEmpty(),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(13.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -1171,7 +1215,12 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             ) {
                 Icon(Icons.Default.PlayArrow, null)
                 Spacer(Modifier.width(7.dp))
-                Text(if (item?.trailerUrl.isNullOrBlank()) "Bande-annonce indisponible" else "Voir la bande-annonce", fontWeight = FontWeight.Bold)
+                Text(
+                    if (!item?.versions.isNullOrEmpty()) "Regarder le film"
+                    else if (item?.trailerUrl.isNullOrBlank()) "Lecture indisponible"
+                    else "Voir la bande-annonce",
+                    fontWeight = FontWeight.Bold
+                )
             }
             Spacer(Modifier.height(9.dp))
             OutlinedButton(
@@ -1195,24 +1244,98 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
 }
 
 @Composable
-private fun PlayerScreen(item: MediaItem?, onBack: () -> Unit) {
+private fun PlayerScreen(
+    item: MediaItem?,
+    session: AuthSessionData?,
+    onSessionUpdate: (AuthSessionData) -> Unit,
+    onLogin: () -> Unit,
+    onBack: () -> Unit
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val videoUrl = item?.trailerUrl
+    val scope = rememberCoroutineScope()
+    val versions = item?.versions.orEmpty()
+    var selectedVersion by remember(item?.id) { mutableStateOf(versions.firstOrNull()) }
+    var videoUrl by remember(item?.id) { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
+    LaunchedEffect(item?.id, versions.size) {
+        if (versions.isEmpty()) videoUrl = item?.trailerUrl
+    }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
             Text(item?.title ?: "Lecteur vidéo", color = UiColors.text, fontWeight = FontWeight.Bold)
         }
+
+        if (versions.isNotEmpty()) {
+            Text("Qualité vidéo", color = UiColors.text, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                versions.forEach { version ->
+                    FilterChip(
+                        selected = selectedVersion?.id == version.id,
+                        onClick = { selectedVersion = version; videoUrl = null; playbackError = null },
+                        label = { Text(version.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = UiColors.accent,
+                            selectedLabelColor = Color(0xFF100D07),
+                            labelColor = UiColors.text
+                        )
+                    )
+                }
+            }
+            Button(
+                onClick = {
+                    val chosen = selectedVersion
+                    val current = session
+                    if (chosen == null) playbackError = "Aucune version vidéo disponible."
+                    else if (current == null) onLogin()
+                    else {
+                        loading = true
+                        playbackError = null
+                        scope.launch {
+                            runCatching { MoviesHubApi.startPlayback(chosen.id, current) }
+                                .onSuccess { (updated, raw) ->
+                                    onSessionUpdate(updated)
+                                    val signedUrl = runCatching { JSONObject(raw).optString("url") }.getOrNull()
+                                    if (!signedUrl.isNullOrBlank() && signedUrl.startsWith("https://")) videoUrl = signedUrl
+                                    else playbackError = "L’API n’a pas renvoyé de lien vidéo valide."
+                                }
+                                .onFailure { playbackError = it.message ?: "Impossible de lancer la lecture." }
+                            loading = false
+                        }
+                    }
+                },
+                enabled = !loading && selectedVersion != null,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = Color(0xFF100D07))
+            ) {
+                if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Default.PlayArrow, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (loading) "Préparation…" else "Lire cette version", fontWeight = FontWeight.Bold)
+            }
+        } else if (!item?.trailerUrl.isNullOrBlank()) {
+            Text("Bande-annonce", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
+        } else {
+            Text("Aucune version vidéo ni bande-annonce publiée.", color = UiColors.muted)
+        }
+
+        playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+
         if (videoUrl.isNullOrBlank()) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF171D26)), contentAlignment = Alignment.Center) {
-                Text("Aucune bande-annonce publiée pour ce contenu.", color = UiColors.muted)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.PlayCircleOutline, null, tint = UiColors.accent, modifier = Modifier.size(46.dp))
+                    Text("La vidéo apparaîtra ici", color = UiColors.muted, fontSize = 12.sp)
+                }
             }
         } else {
             val player = remember(videoUrl) {
                 ExoPlayer.Builder(context).build().apply {
-                    setMediaItem(PlayerMediaItem.fromUri(videoUrl))
+                    setMediaItem(PlayerMediaItem.fromUri(videoUrl!!))
                     prepare()
                     playWhenReady = true
                 }
@@ -1232,18 +1355,16 @@ private fun PlayerScreen(item: MediaItem?, onBack: () -> Unit) {
                 }
             }
             AndroidView(
-                factory = { viewContext ->
-                    PlayerView(viewContext).apply {
-                        this.player = player
-                        useController = true
-                    }
-                },
+                factory = { viewContext -> PlayerView(viewContext).apply { this.player = player; useController = true } },
                 update = { it.player = player },
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))
             )
         }
-        Text("Lecteur Media3 • Bande-annonce", color = UiColors.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
-        Text("Les films complets nécessitent une session connectée et un lien temporaire autorisé par l'API.", color = UiColors.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        Text(
+            if (versions.isNotEmpty()) "Lecture via un lien temporaire autorisé par MovieHub."
+            else "Aperçu de la bande-annonce officielle.",
+            color = UiColors.muted, fontSize = 12.sp
+        )
     }
 }
 
