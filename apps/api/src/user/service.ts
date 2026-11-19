@@ -196,6 +196,19 @@ export class UserDataService {
     };
   }
 
+  /** Renouvelle le lien signé d'un téléchargement en cours sans créer une nouvelle entrée. */
+  async refreshDownloadUrl(userId: string, downloadId: string) {
+    const rec = await this.repo.getDownload(downloadId);
+    if (!rec || rec.userId !== userId) throw new NotFoundError('Téléchargement introuvable');
+    if (rec.status !== 'STARTED') throw new ConflictError('Ce téléchargement n’est plus en cours');
+    const ch = await this.visibleChain(rec.videoAssetId);
+    const langs = [...ch.version.audioTracks].sort((a, b) => a.streamIndex - b.streamIndex).map((t) => t.languageCode).join('+');
+    const ext = /\\.([a-z0-9]{1,5})$/i.exec(ch.objectKey)?.[1] ?? 'mkv';
+    const episode = ch.episode && ch.season ? ` S${String(ch.season.number).padStart(2, '0')}E${String(ch.episode.number).padStart(2, '0')}` : '';
+    const filename = `${safeName(ch.content.title)}${episode}${langs ? ` [${langs}]` : ''}.${ext}`;
+    return { downloadId: rec.id, url: this.signer.presignGet(ch.objectKey, this.ttl, { downloadName: filename }), expiresInSeconds: this.ttl, sizeBytes: ch.version.sizeBytes, filename, allowLocalShare: ch.version.allowLocalShare };
+  }
+
   async finishDownload(userId: string, downloadId: string, status: 'COMPLETED' | 'FAILED' | 'CANCELED', reason: string | null): Promise<DownloadRecord> {
     const d = await this.repo.getDownload(downloadId);
     if (!d || d.userId !== userId) throw new NotFoundError('Téléchargement introuvable');
