@@ -81,6 +81,7 @@ Tendances : score = consultations x1 + téléchargements x5 + favoris x3 + lectu
 | `GET\|PATCH /me/settings` | `locale`, `notificationsEnabled`, `historySyncEnabled`, `adSoundEnabled` |
 | `GET\|POST\|DELETE /me/search-history` | recherches récentes (50 max, doublons fusionnés) |
 | `POST /versions/:id/download` | lien signé temporaire (15 min par défaut) + nom de fichier + taille + `allowLocalShare` ; refusé si la version, l'épisode, la saison ou le contenu n'est pas publié (410 si retiré) ; 60 par heure et par utilisateur |
+| `POST /downloads/:id/refresh-url` | Renouvelle le lien R2 signé d'un téléchargement STARTED, sans créer une nouvelle entrée (utile après expiration pendant une pause). |
 | `POST /downloads/:id/status` | `COMPLETED`, `FAILED` ou `CANCELED` (idempotent ; propriétaire seulement). Le fichier téléchargé reste sur l'appareil : aucune suppression à distance |
 
 
