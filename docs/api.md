@@ -80,7 +80,7 @@ Tendances : score = consultations x1 + téléchargements x5 + favoris x3 + lectu
 | `GET /me/history`, `PUT /me/history`, `DELETE /me/history/:id`, `DELETE /me/history` | historique : `PUT { contentId \| episodeId, versionId?, positionSeconds, durationSeconds?, completed? }` met à jour la même ligne ; terminé automatiquement à 95 % ; si la synchronisation est désactivée, `{ stored: false }` et rien n'est conservé |
 | `GET\|PATCH /me/settings` | `locale`, `notificationsEnabled`, `historySyncEnabled`, `adSoundEnabled` |
 | `GET\|POST\|DELETE /me/search-history` | recherches récentes (50 max, doublons fusionnés) |
-| `POST /versions/:id/play` | (Bearer) lien signé temporaire de lecture ; sans entrée de téléchargement, incrémente le compteur de lectures. |\n| `POST /versions/:id/download` | lien signé temporaire (15 min par défaut) + nom de fichier + taille + `allowLocalShare` ; refusé si la version, l'épisode, la saison ou le contenu n'est pas publié (410 si retiré) ; 60 par heure et par utilisateur |
+| `POST /versions/:id/play` | (Bearer) lien signé temporaire de lecture ; sans entrée de téléchargement, incrémente le compteur de lectures. \n| `POST /versions/:id/download` | lien signé temporaire (15 min par défaut) + nom de fichier + taille + `allowLocalShare` ; refusé si la version, l'épisode, la saison ou le contenu n'est pas publié (410 si retiré) ; 60 par heure et par utilisateur |
 | `POST /downloads/:id/refresh-url` | Renouvelle le lien R2 signé d'un téléchargement STARTED, sans créer une nouvelle entrée (utile après expiration pendant une pause). |
 | `POST /downloads/:id/status` | `COMPLETED`, `FAILED` ou `CANCELED` (idempotent ; propriétaire seulement). Le fichier téléchargé reste sur l'appareil : aucune suppression à distance |
 
