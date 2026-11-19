@@ -456,18 +456,8 @@ private fun MoviesHubApp() {
                             }
                         )
                         Screen.SEARCH -> SearchScreen(
-                            searchText, { searchText = it }, media,
-                            onSearch = {
-                                if (searchText.trim().length >= 2) {
-                                    scope.launch {
-                                        loading = true
-                                        runCatching { MoviesHubApi.search(searchText.trim()) }
-                                            .onSuccess { media = it; error = null }
-                                            .onFailure { error = "Recherche indisponible pour le moment" }
-                                        loading = false
-                                    }
-                                }
-                            },
+                            query = searchText,
+                            onQuery = { searchText = it },
                             onSelect = {
                                 selected = it
                                 navigate(Screen.DETAIL)
@@ -1024,20 +1014,89 @@ private fun CategoriesScreen(
 }
 
 @Composable
-private fun SearchScreen(query: String, onQuery: (String) -> Unit, media: List<MediaItem>, onSearch: () -> Unit, onSelect: (MediaItem) -> Unit) {
+private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (MediaItem) -> Unit) {
+    var results by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(query) {
+        val term = query.trim()
+        results = emptyList()
+        error = null
+        if (term.length < 2) {
+            loading = false
+        } else {
+            loading = true
+            delay(350)
+            runCatching { MoviesHubApi.search(term) }
+                .onSuccess { results = it }
+                .onFailure { error = "La recherche est momentanément indisponible." }
+            loading = false
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Header("Recherche")
         OutlinedTextField(
-            value = query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            placeholder = { Text("Film, série, anime…", color = UiColors.muted) }, singleLine = true,
-            trailingIcon = { IconButton(onClick = onSearch) { Icon(Icons.Default.Search, null, tint = UiColors.accent) } },
+            value = query,
+            onValueChange = onQuery,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            placeholder = { Text("Film, série, anime…", color = UiColors.muted) },
+            singleLine = true,
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQuery("") }) {
+                        Icon(Icons.Default.Close, "Effacer la recherche", tint = UiColors.muted)
+                    }
+                } else {
+                    Icon(Icons.Default.Search, null, tint = UiColors.accent)
+                }
+            },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = UiColors.accent, unfocusedBorderColor = Color(0xFF343A44),
-                focusedTextColor = UiColors.text, unfocusedTextColor = UiColors.text
+                focusedBorderColor = UiColors.accent,
+                unfocusedBorderColor = Color(0xFF343A44),
+                focusedTextColor = UiColors.text,
+                unfocusedTextColor = UiColors.text
             )
         )
-        Text("Suggestions", color = UiColors.accent, modifier = Modifier.padding(16.dp), fontWeight = FontWeight.Bold)
-        LazyColumn { items(media.take(8)) { MediaPoster(it) { onSelect(it) } } }
+
+        when {
+            query.trim().length < 2 -> {
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.Search, null, tint = UiColors.accent, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Que veux-tu regarder ?", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("Saisis au moins deux caractères pour rechercher dans le catalogue.", color = UiColors.muted, fontSize = 13.sp)
+                }
+            }
+            loading -> {
+                LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(16.dp))
+                Text("Recherche en cours…", color = UiColors.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            error != null -> {
+                EmptyMessage(error!!)
+            }
+            results.isEmpty() -> {
+                EmptyMessage("Aucun résultat pour « ${query.trim()} ». Essaie un autre titre.")
+            }
+            else -> {
+                Text(
+                    "${results.size} résultat(s)",
+                    color = UiColors.accent,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
+                LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
+                    items(results, key = { it.id }) { item ->
+                        MediaPoster(item) { onSelect(item) }
+                    }
+                }
+            }
+        }
     }
 }
 
