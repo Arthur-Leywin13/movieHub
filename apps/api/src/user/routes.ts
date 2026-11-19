@@ -105,6 +105,10 @@ export function registerUserRoutes(router: Router, deps: { users: UserDataServic
     status: 200,
     body: await users.startDownload(await me(req), id(req), { appVersion: req.headers['x-app-version'] ?? null }),
   }));
+  on('POST', '/downloads/:id/refresh-url', async (req) => ({
+    status: 200,
+    body: await users.refreshDownloadUrl(await me(req), id(req)),
+  }));
   on('POST', '/downloads/:id/status', async (req) => {
     const userId = await me(req);
     const b = asObject(req.body);
