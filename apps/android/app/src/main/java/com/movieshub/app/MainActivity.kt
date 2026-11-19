@@ -1320,13 +1320,10 @@ private fun PlayerScreen(
         if (versions.isEmpty()) videoUrl = item?.trailerUrl
     }
 
-    suspend fun saveProgress(player: ExoPlayer, version: VideoVersion) {
+    suspend fun saveProgress(positionSeconds: Int, durationSeconds: Int, version: VideoVersion) {
         val current = activeSession ?: return
         val content = item ?: return
         if (!content.type.equals("MOVIE", ignoreCase = true)) return
-        val durationMs = player.duration
-        val positionSeconds = (player.currentPosition / 1000L).toInt()
-        val durationSeconds = if (durationMs > 0) (durationMs / 1000L).toInt() else version.durationSeconds ?: 0
         if (positionSeconds <= 0 || durationSeconds <= 0) return
         runCatching {
             MoviesHubApi.recordHistory(content.id, version.id, positionSeconds, durationSeconds, current)
@@ -1430,7 +1427,11 @@ private fun PlayerScreen(
                 if (version != null) {
                     while (true) {
                         delay(15_000)
-                        if (player.isPlaying) saveProgress(player, version)
+                        if (player.isPlaying) {
+                            val position = (player.currentPosition / 1000L).toInt()
+                            val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else version.durationSeconds ?: 0
+                            saveProgress(position, duration, version)
+                        }
                     }
                 }
             }
@@ -1439,7 +1440,11 @@ private fun PlayerScreen(
                     when (event) {
                         Lifecycle.Event.ON_PAUSE -> {
                             player.pause()
-                            if (versionForPlayer != null) scope.launch { saveProgress(player, versionForPlayer) }
+                            if (versionForPlayer != null) {
+                                val position = (player.currentPosition / 1000L).toInt()
+                                val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else versionForPlayer.durationSeconds ?: 0
+                                scope.launch { saveProgress(position, duration, versionForPlayer) }
+                            }
                         }
                         Lifecycle.Event.ON_RESUME -> if (player.playbackState != androidx.media3.common.Player.STATE_ENDED) player.play()
                         else -> Unit
@@ -1448,7 +1453,11 @@ private fun PlayerScreen(
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose {
                     lifecycleOwner.lifecycle.removeObserver(observer)
-                    if (versionForPlayer != null) scope.launch { saveProgress(player, versionForPlayer) }
+                    if (versionForPlayer != null) {
+                        val position = (player.currentPosition / 1000L).toInt()
+                        val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else versionForPlayer.durationSeconds ?: 0
+                        scope.launch { saveProgress(position, duration, versionForPlayer) }
+                    }
                     player.release()
                 }
             }
