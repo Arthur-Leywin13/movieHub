@@ -86,7 +86,14 @@ private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS,
 
 private data class SessionUser(val id: String, val email: String, val displayName: String)
 private data class AuthSessionData(val user: SessionUser, val accessToken: String, val refreshToken: String, val expiresAtMillis: Long)
-private data class HistoryEntry(val id: String, val content: MediaItem, val positionSeconds: Int, val completed: Boolean)
+private data class HistoryEntry(
+    val id: String,
+    val content: MediaItem,
+    val positionSeconds: Int,
+    val durationSeconds: Int?,
+    val versionId: String?,
+    val completed: Boolean
+)
 
 private object SecureSessionStore {
     private fun preferences(context: Context) = EncryptedSharedPreferences.create(
@@ -206,7 +213,7 @@ private object MoviesHubApi {
         active to request(path, "GET", bearer = active.accessToken)
     }
 
-    suspend fun putAuthorized(path: String, session: AuthSessionData): AuthSessionData = withContext(Dispatchers.IO) {
+    suspend fun putAuthorized(path: String, session: AuthSessionData, body: JSONObject? = null): AuthSessionData = withContext(Dispatchers.IO) {
         val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
             val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
             val user = refreshed.getJSONObject("user")
@@ -217,9 +224,26 @@ private object MoviesHubApi {
                 System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
             )
         } else session
-        request(path, "PUT", bearer = active.accessToken)
+        request(path, "PUT", body = body, bearer = active.accessToken)
         active
     }
+
+    suspend fun recordHistory(
+        contentId: String,
+        versionId: String,
+        positionSeconds: Int,
+        durationSeconds: Int,
+        session: AuthSessionData
+    ): AuthSessionData = putAuthorized(
+        "/me/history",
+        session,
+        JSONObject()
+            .put("contentId", contentId)
+            .put("versionId", versionId)
+            .put("positionSeconds", positionSeconds.coerceAtLeast(0))
+            .put("durationSeconds", durationSeconds.coerceAtLeast(1))
+            .put("completed", durationSeconds > 0 && positionSeconds >= durationSeconds * 0.95)
+    )
 
     suspend fun deleteAuthorized(path: String, session: AuthSessionData): AuthSessionData = withContext(Dispatchers.IO) {
         val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
@@ -288,7 +312,16 @@ private object MoviesHubApi {
             for (i in 0 until array.length()) {
                 val entry = array.optJSONObject(i) ?: continue
                 val content = entry.optJSONObject("content") ?: continue
-                add(HistoryEntry(entry.optString("id"), parseItem(content), entry.optInt("positionSeconds"), entry.optBoolean("completed")))
+                add(
+                    HistoryEntry(
+                        id = entry.optString("id"),
+                        content = parseItem(content),
+                        positionSeconds = entry.optInt("positionSeconds"),
+                        durationSeconds = entry.optInt("durationSeconds").takeIf { it > 0 },
+                        versionId = entry.optString("versionId").takeIf { it.isNotBlank() && it != "null" },
+                        completed = entry.optBoolean("completed")
+                    )
+                )
             }
         }
     }
@@ -1259,9 +1292,47 @@ private fun PlayerScreen(
     var videoUrl by remember(item?.id) { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var playbackError by remember { mutableStateOf<String?>(null) }
+    var resumePositionSeconds by remember(item?.id) { mutableIntStateOf(0) }
+    var resumeVersionId by remember(item?.id) { mutableStateOf<String?>(null) }
+    var activeSession by remember(item?.id) { mutableStateOf(session) }
+
+    LaunchedEffect(session) { activeSession = session }
+
+    LaunchedEffect(item?.id, session?.user?.id) {
+        val current = session
+        val content = item
+        if (current != null && content != null && content.type.equals("MOVIE", ignoreCase = true)) {
+            runCatching { MoviesHubApi.authorizedGet("/me/history?limit=50", current) }
+                .onSuccess { (updated, raw) ->
+                    activeSession = updated
+                    onSessionUpdate(updated)
+                    val previous = MoviesHubApi.parseHistory(raw)
+                        .firstOrNull { it.content.id == content.id && !it.completed && it.positionSeconds > 5 }
+                    if (previous != null) {
+                        resumePositionSeconds = previous.positionSeconds
+                        resumeVersionId = previous.versionId
+                    }
+                }
+        }
+    }
 
     LaunchedEffect(item?.id, versions.size) {
         if (versions.isEmpty()) videoUrl = item?.trailerUrl
+    }
+
+    suspend fun saveProgress(positionSeconds: Int, durationSeconds: Int, version: VideoVersion) {
+        val current = activeSession ?: return
+        val content = item ?: return
+        if (!content.type.equals("MOVIE", ignoreCase = true)) return
+        if (positionSeconds <= 0 || durationSeconds <= 0) return
+        runCatching {
+            MoviesHubApi.recordHistory(content.id, version.id, positionSeconds, durationSeconds, current)
+        }.onSuccess { updated ->
+            activeSession = updated
+            onSessionUpdate(updated)
+            resumePositionSeconds = positionSeconds
+            resumeVersionId = version.id
+        }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1286,10 +1357,15 @@ private fun PlayerScreen(
                     )
                 }
             }
+            if (resumePositionSeconds > 5 && (resumeVersionId == null || resumeVersionId == selectedVersion?.id)) {
+                val minutes = resumePositionSeconds / 60
+                val seconds = resumePositionSeconds % 60
+                Text("Reprise disponible à ${minutes}:${seconds.toString().padStart(2, '0')}", color = UiColors.accent, fontSize = 12.sp)
+            }
             Button(
                 onClick = {
                     val chosen = selectedVersion
-                    val current = session
+                    val current = activeSession
                     if (chosen == null) playbackError = "Aucune version vidéo disponible."
                     else if (current == null) onLogin()
                     else {
@@ -1298,6 +1374,7 @@ private fun PlayerScreen(
                         scope.launch {
                             runCatching { MoviesHubApi.startPlayback(chosen.id, current) }
                                 .onSuccess { (updated, raw) ->
+                                    activeSession = updated
                                     onSessionUpdate(updated)
                                     val signedUrl = runCatching { JSONObject(raw).optString("url") }.getOrNull()
                                     if (!signedUrl.isNullOrBlank() && signedUrl.startsWith("https://")) videoUrl = signedUrl
@@ -1315,7 +1392,8 @@ private fun PlayerScreen(
                 if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Default.PlayArrow, null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (loading) "Préparation…" else "Lire cette version", fontWeight = FontWeight.Bold)
+                val canResume = resumePositionSeconds > 5 && (resumeVersionId == null || resumeVersionId == selectedVersion?.id)
+                Text(if (loading) "Préparation…" else if (canResume) "Reprendre la lecture" else "Lire cette version", fontWeight = FontWeight.Bold)
             }
         } else if (!item?.trailerUrl.isNullOrBlank()) {
             Text("Bande-annonce", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
@@ -1333,17 +1411,41 @@ private fun PlayerScreen(
                 }
             }
         } else {
+            val versionForPlayer = selectedVersion
             val player = remember(videoUrl) {
                 ExoPlayer.Builder(context).build().apply {
                     setMediaItem(PlayerMediaItem.fromUri(videoUrl!!))
+                    if (versionForPlayer != null && resumeVersionId == versionForPlayer.id) {
+                        seekTo(resumePositionSeconds * 1000L)
+                    }
                     prepare()
                     playWhenReady = true
                 }
             }
-            DisposableEffect(player, lifecycleOwner) {
+            LaunchedEffect(player, versionForPlayer?.id) {
+                val version = versionForPlayer
+                if (version != null) {
+                    while (true) {
+                        delay(15_000)
+                        if (player.isPlaying) {
+                            val position = (player.currentPosition / 1000L).toInt()
+                            val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else version.durationSeconds ?: 0
+                            saveProgress(position, duration, version)
+                        }
+                    }
+                }
+            }
+            DisposableEffect(player, lifecycleOwner, versionForPlayer?.id) {
                 val observer = LifecycleEventObserver { _, event ->
                     when (event) {
-                        Lifecycle.Event.ON_PAUSE -> player.pause()
+                        Lifecycle.Event.ON_PAUSE -> {
+                            player.pause()
+                            if (versionForPlayer != null) {
+                                val position = (player.currentPosition / 1000L).toInt()
+                                val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else versionForPlayer.durationSeconds ?: 0
+                                scope.launch { saveProgress(position, duration, versionForPlayer) }
+                            }
+                        }
                         Lifecycle.Event.ON_RESUME -> if (player.playbackState != androidx.media3.common.Player.STATE_ENDED) player.play()
                         else -> Unit
                     }
@@ -1351,6 +1453,11 @@ private fun PlayerScreen(
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose {
                     lifecycleOwner.lifecycle.removeObserver(observer)
+                    if (versionForPlayer != null) {
+                        val position = (player.currentPosition / 1000L).toInt()
+                        val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else versionForPlayer.durationSeconds ?: 0
+                        scope.launch { saveProgress(position, duration, versionForPlayer) }
+                    }
                     player.release()
                 }
             }
@@ -1361,7 +1468,7 @@ private fun PlayerScreen(
             )
         }
         Text(
-            if (versions.isNotEmpty()) "Lecture via un lien temporaire autorisé par MovieHub."
+            if (versions.isNotEmpty()) "La progression est synchronisée automatiquement lorsque tu regardes un film."
             else "Aperçu de la bande-annonce officielle.",
             color = UiColors.muted, fontSize = 12.sp
         )
