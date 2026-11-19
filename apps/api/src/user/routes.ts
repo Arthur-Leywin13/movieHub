@@ -101,10 +101,13 @@ export function registerUserRoutes(router: Router, deps: { users: UserDataServic
   });
 
   // ---- lecture vidéo ----
-  on('POST', '/versions/:id/play', async (req) => ({
-    status: 200,
-    body: await users.startPlayback(id(req)),
-  }));
+  on('POST', '/versions/:id/play', async (req) => {
+    await me(req); // vérifie la session avant de signer une URL de lecture
+    return {
+      status: 200,
+      body: await users.startPlayback(id(req)),
+    };
+  });
 
   // ---- téléchargements ----
   on('POST', '/versions/:id/download', async (req) => ({
