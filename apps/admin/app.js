@@ -532,6 +532,8 @@
       ...((audience === "FOLLOWERS" || ["NEW_EPISODE", "NEW_SEASON", "NEW_LANGUAGE_VERSION"].includes(type)) ? { contentId } : {}),
       ...(audience === "USER" ? { targetUserId } : {})
     };
+    const audienceLabel = audience === "ALL" ? "tous les utilisateurs" : audience === "FOLLOWERS" ? "les abonnés ciblés" : "l’utilisateur indiqué";
+    if (!confirm("Envoyer immédiatement cette notification à " + audienceLabel + " ?\\n\\n" + payload.title)) return;
     const result = await api("/admin/notifications", { method: "POST", body: payload });
     event.currentTarget.reset(); updateAudienceFields();
     toast("Notification envoyée à " + (result.recipientCount ?? "—") + " utilisateur(s).");
