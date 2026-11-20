@@ -144,6 +144,12 @@ class PrivateDownloadWorker(
         var downloadId: String? = null
 
         return try {
+            setProgress(Data.Builder()
+                .putString("title", title)
+                .putString("versionLabel", label)
+                .putString("versionId", versionId)
+                .putInt("progressPercent", 0)
+                .build())
             setForeground(notification(0))
             activeAccessToken()
             var link: DownloadLink? = null
@@ -213,7 +219,14 @@ class PrivateDownloadWorker(
                             downloaded += count
                             val percent = if (totalBytes > 0) ((downloaded * 100) / totalBytes).toInt().coerceIn(0, 100) else 0
                             if (percent != lastPercent) {
-                                setProgress(Data.Builder().putInt("progressPercent", percent).putLong("downloadedBytes", downloaded).putLong("totalBytes", totalBytes).build())
+                                setProgress(Data.Builder()
+                                    .putString("title", title)
+                                    .putString("versionLabel", label)
+                                    .putString("versionId", versionId)
+                                    .putInt("progressPercent", percent)
+                                    .putLong("downloadedBytes", downloaded)
+                                    .putLong("totalBytes", totalBytes)
+                                    .build())
                                 if (percent % 5 == 0) setForeground(notification(percent))
                                 lastPercent = percent
                             }
@@ -233,7 +246,12 @@ class PrivateDownloadWorker(
         } catch (error: Throwable) {
             downloadId?.let { finishOnServer(it, "FAILED", error.message ?: "Erreur inconnue") }
             metadata.delete()
-            Result.failure(Data.Builder().putString("error", error.message ?: "Téléchargement impossible").build())
+            Result.failure(Data.Builder()
+                .putString("error", error.message ?: "Téléchargement impossible")
+                .putString("title", title)
+                .putString("versionLabel", label)
+                .putString("versionId", versionId)
+                .build())
         }
     }
 }
