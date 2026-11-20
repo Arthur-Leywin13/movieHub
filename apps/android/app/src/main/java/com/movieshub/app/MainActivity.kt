@@ -64,6 +64,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.File
 
 private data class MoviePalette(
     val background: Color,
@@ -429,6 +430,8 @@ private fun MoviesHubApp() {
     var splash by remember { mutableStateOf(true) }
     BackHandler(enabled = !splash && screen != Screen.HOME) { goBack() }
     var selected by remember { mutableStateOf<MediaItem?>(null) }
+    var offlinePlaybackPath by remember { mutableStateOf<String?>(null) }
+    var offlinePlaybackTitle by remember { mutableStateOf<String?>(null) }
     var detailLoading by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf("Tous") }
@@ -585,6 +588,8 @@ private fun MoviesHubApp() {
                         Screen.PLAYER -> PlayerScreen(
                             item = selected,
                             session = session,
+                            offlineFilePath = offlinePlaybackPath,
+                            offlineTitle = offlinePlaybackTitle,
                             onSessionUpdate = {
                                 session = it
                                 SecureSessionStore.save(context, it)
@@ -592,7 +597,14 @@ private fun MoviesHubApp() {
                             onLogin = { navigate(Screen.AUTH) },
                             onBack = { goBack() }
                         )
-                        Screen.DOWNLOADS -> DownloadsScreen()
+                        Screen.DOWNLOADS -> DownloadsScreen(
+                            onPlayOffline = { path, title ->
+                                offlinePlaybackPath = path
+                                offlinePlaybackTitle = title
+                                selected = null
+                                navigate(Screen.PLAYER)
+                            }
+                        )
                         Screen.PROFILE -> ProfileScreen(
                             session = session,
                             onLogin = { navigate(Screen.AUTH) },
@@ -1364,6 +1376,8 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
 private fun PlayerScreen(
     item: MediaItem?,
     session: AuthSessionData?,
+    offlineFilePath: String?,
+    offlineTitle: String?,
     onSessionUpdate: (AuthSessionData) -> Unit,
     onLogin: () -> Unit,
     onBack: () -> Unit
@@ -1373,7 +1387,9 @@ private fun PlayerScreen(
     val scope = rememberCoroutineScope()
     val versions = item?.versions.orEmpty()
     var selectedVersion by remember(item?.id) { mutableStateOf(versions.firstOrNull()) }
-    var videoUrl by remember(item?.id) { mutableStateOf<String?>(null) }
+    var videoUrl by remember(item?.id, offlineFilePath) {
+        mutableStateOf(offlineFilePath?.let { File(it).toURI().toString() })
+    }
     var loading by remember { mutableStateOf(false) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var resumePositionSeconds by remember(item?.id) { mutableIntStateOf(0) }
@@ -1400,8 +1416,11 @@ private fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(item?.id, versions.size) {
-        if (versions.isEmpty()) videoUrl = item?.trailerUrl
+    LaunchedEffect(item?.id, versions.size, offlineFilePath) {
+        if (offlineFilePath != null) {
+            videoUrl = File(offlineFilePath).takeIf { it.isFile && it.canRead() }?.toURI()?.toString()
+                ?: run { playbackError = "Fichier hors connexion introuvable."; null }
+        } else if (versions.isEmpty()) videoUrl = item?.trailerUrl
     }
 
     suspend fun saveProgress(positionSeconds: Int, durationSeconds: Int, version: VideoVersion) {
@@ -1422,10 +1441,12 @@ private fun PlayerScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
-            MovieHubText(item?.title ?: "Lecteur vidéo", color = UiColors.text, fontWeight = FontWeight.Bold)
+            MovieHubText(offlineTitle ?: item?.title ?: "Lecteur vidéo", color = UiColors.text, fontWeight = FontWeight.Bold)
         }
 
-        if (versions.isNotEmpty()) {
+        if (offlineFilePath != null) {
+            MovieHubText("Lecture hors connexion", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
+        } else if (versions.isNotEmpty()) {
             MovieHubText("Qualité vidéo", color = UiColors.text, fontWeight = FontWeight.SemiBold)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 versions.forEach { version ->
@@ -1552,7 +1573,8 @@ private fun PlayerScreen(
             )
         }
         MovieHubText(
-            if (versions.isNotEmpty()) "La progression est synchronisée automatiquement lorsque tu regardes un film."
+            if (offlineFilePath != null) "Cette vidéo est lue depuis le stockage privé de cet appareil."
+            else if (versions.isNotEmpty()) "La progression est synchronisée automatiquement lorsque tu regardes un film."
             else "Aperçu de la bande-annonce officielle.",
             color = UiColors.muted, fontSize = 12.sp
         )
@@ -1581,8 +1603,9 @@ private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: 
 }
 
 @Composable
-private fun DownloadsScreen() {
+private fun DownloadsScreen(onPlayOffline: (String, String) -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val workInfos by WorkManager.getInstance(context).getWorkInfosByTagLiveData(PrivateDownloadWorker.TAG).observeAsState(emptyList())
     var transferMode by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
@@ -1623,7 +1646,37 @@ private fun DownloadsScreen() {
                                     MovieHubText(if (info.state == WorkInfo.State.RUNNING) "Téléchargement : $percent %" else "En attente du réseau…", color = UiColors.muted, fontSize = 11.sp)
                                     TextButton(onClick = { WorkManager.getInstance(context).cancelWorkById(info.id) }) { MovieHubText("Mettre en pause", color = UiColors.accent) }
                                 }
-                                WorkInfo.State.SUCCEEDED -> MovieHubText("Téléchargement terminé • enregistré en privé", color = UiColors.accent, fontSize = 12.sp)
+                                WorkInfo.State.SUCCEEDED -> {
+                                    MovieHubText("Téléchargement terminé • enregistré en privé", color = UiColors.accent, fontSize = 12.sp)
+                                    val filePath = info.outputData.getString("filePath")
+                                    val savedFile = filePath?.let { File(it) }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = { if (savedFile?.isFile == true) onPlayOffline(savedFile.absolutePath, title) },
+                                            enabled = savedFile?.isFile == true,
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, null)
+                                            Spacer(Modifier.width(5.dp))
+                                            MovieHubText("Lire hors connexion")
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    savedFile?.delete()
+                                                    WorkManager.getInstance(context).pruneWork()
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                        ) {
+                                            Icon(Icons.Default.DeleteOutline, null)
+                                            Spacer(Modifier.width(5.dp))
+                                            MovieHubText("Supprimer")
+                                        }
+                                    }
+                                }
                                 WorkInfo.State.CANCELLED -> {
                                     MovieHubText("En pause • fichier partiel conservé en privé", color = UiColors.muted, fontSize = 12.sp)
                                     val versionId = info.progress.getString("versionId")
