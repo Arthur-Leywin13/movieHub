@@ -41,6 +41,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem as PlayerMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
@@ -541,6 +549,10 @@ private fun MoviesHubApp() {
                             isFavorite = selected?.id in favoriteIds,
                             onBack = { goBack() },
                             onPlay = { navigate(Screen.PLAYER) },
+                            onDownload = { version ->
+                                if (session == null) navigate(Screen.AUTH)
+                                else enqueuePrivateDownload(context, selected, version)
+                            },
                             onFavorite = {
                                 val item = selected
                                 val current = session
@@ -1178,7 +1190,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onDownload: (VideoVersion) -> Unit, onFavorite: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(
             Modifier.fillMaxWidth().height(390.dp)
@@ -1254,6 +1266,21 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
                     else "Voir la bande-annonce",
                     fontWeight = FontWeight.Bold
                 )
+            }
+            if (!item?.versions.isNullOrEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text("TÉLÉCHARGER HORS CONNEXION", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                item?.versions.orEmpty().forEach { version ->
+                    OutlinedButton(
+                        onClick = { onDownload(version) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                    ) {
+                        Icon(Icons.Default.Download, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Télécharger ${version.label}")
+                    }
+                }
             }
             Spacer(Modifier.height(9.dp))
             OutlinedButton(
@@ -1475,8 +1502,31 @@ private fun PlayerScreen(
     }
 }
 
+
+private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null) {
+    val title = titleOverride ?: item?.title ?: "Film MovieHub"
+    val request = OneTimeWorkRequestBuilder<PrivateDownloadWorker>()
+        .setInputData(
+            Data.Builder()
+                .putString("versionId", version.id)
+                .putString("title", title)
+                .putString("versionLabel", version.label)
+                .build()
+        )
+        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+        .addTag(PrivateDownloadWorker.TAG)
+        .build()
+    WorkManager.getInstance(context).enqueueUniqueWork(
+        "moviehub-download-${version.id}",
+        ExistingWorkPolicy.REPLACE,
+        request
+    )
+}
+
 @Composable
 private fun DownloadsScreen() {
+    val context = LocalContext.current
+    val workInfos by WorkManager.getInstance(context).getWorkInfosByTagLiveData(PrivateDownloadWorker.TAG).observeAsState(emptyList())
     var transferMode by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Header("Téléchargements")
@@ -1489,14 +1539,43 @@ private fun DownloadsScreen() {
                 }
             }
         }
-        Spacer(Modifier.height(28.dp))
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.DownloadForOffline, null, tint = UiColors.accent, modifier = Modifier.size(62.dp))
-                Spacer(Modifier.height(14.dp))
-                Text("Aucun téléchargement", color = UiColors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("Les vidéos enregistrées apparaîtront ici.", color = UiColors.muted, fontSize = 13.sp)
-                Text("Elles resteront dans l’espace privé de MovieHub et ne seront pas visibles dans la galerie publique.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(18.dp))
+        if (workInfos.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.DownloadForOffline, null, tint = UiColors.accent, modifier = Modifier.size(62.dp))
+                    Spacer(Modifier.height(14.dp))
+                    Text("Aucun téléchargement", color = UiColors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Les vidéos enregistrées apparaîtront ici.", color = UiColors.muted, fontSize = 13.sp)
+                    Text("Les fichiers terminés restent dans l’espace privé de MovieHub, invisibles dans la galerie publique.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(workInfos, key = { it.id }) { info ->
+                    val title = info.outputData.getString("title") ?: info.inputData.getString("title") ?: "Téléchargement MovieHub"
+                    val label = info.inputData.getString("versionLabel") ?: "Vidéo"
+                    val percent = info.progress.getInt("progressPercent", if (info.state == WorkInfo.State.SUCCEEDED) 100 else 0)
+                    Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(title, color = UiColors.text, fontWeight = FontWeight.Bold)
+                            Text(label, color = UiColors.muted, fontSize = 12.sp)
+                            when (info.state) {
+                                WorkInfo.State.RUNNING, WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                                    LinearProgressIndicator(progress = { percent / 100f }, color = UiColors.accent, modifier = Modifier.fillMaxWidth())
+                                    Text(if (info.state == WorkInfo.State.RUNNING) "Téléchargement : $percent %" else "En attente du réseau…", color = UiColors.muted, fontSize = 11.sp)
+                                    TextButton(onClick = { WorkManager.getInstance(context).cancelWorkById(info.id) }) { Text("Mettre en pause", color = UiColors.accent) }
+                                }
+                                WorkInfo.State.SUCCEEDED -> Text("Téléchargement terminé • enregistré en privé", color = UiColors.accent, fontSize = 12.sp)
+                                WorkInfo.State.CANCELLED -> {
+                                    Text("En pause • fichier partiel conservé en privé", color = UiColors.muted, fontSize = 12.sp)
+                                    TextButton(onClick = { enqueuePrivateDownload(context, null, VideoVersion(info.inputData.getString("versionId") ?: return@TextButton, label, null, null), title) }) { Text("Reprendre", color = UiColors.accent) }
+                                }
+                                WorkInfo.State.FAILED -> Text(info.outputData.getString("error") ?: "Échec du téléchargement", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
             }
         }
         if (transferMode != null) {
