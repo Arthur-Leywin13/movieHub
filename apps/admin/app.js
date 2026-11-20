@@ -544,7 +544,7 @@
     });
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
     document.addEventListener("click", (event) => {
-      const target = event.target.closest("[data-view],[data-action],[data-close-dialog],[data-open-content],[data-set-status],[data-cancel-schedule],[data-cancel-withdrawal]");
+      const target = event.target.closest("[data-view],[data-action],[data-close-dialog],[data-open-content],[data-set-status],[data-set-version-status],[data-set-episode-status],[data-cancel-schedule],[data-cancel-withdrawal]");
       if (!target) return;
       if (target.dataset.view) navigate(target.dataset.view);
       if (target.dataset.action === "new-content") $("#contentDialog").showModal();
