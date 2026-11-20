@@ -151,7 +151,21 @@ private val translations = mapOf(
     "Films" to listOf("Movies", "Películas", "Fim"),
     "Séries" to listOf("Series", "Series", "Seri"),
     "Animes" to listOf("Anime", "Anime", "Anime"),
-    "Tous" to listOf("All", "Todos", "Tout")
+    "Tous" to listOf("All", "Todos", "Tout"),
+    "À explorer" to listOf("Explore", "Explorar", "Pou eksplore"),
+    "comédie" to listOf("comedy", "comedia", "komedi"),
+    "action" to listOf("action", "acción", "aksyon"),
+    "aventure" to listOf("adventure", "aventura", "avantur"),
+    "drame" to listOf("drama", "drama", "dram"),
+    "horreur" to listOf("horror", "terror", "later"),
+    "science-fiction" to listOf("science fiction", "ciencia ficción", "syans fiksyon"),
+    "science fiction" to listOf("science fiction", "ciencia ficción", "syans fiksyon"),
+    "fantastique" to listOf("fantasy", "fantasía", "fantazi"),
+    "Connexion à l’API indisponible" to listOf("API connection unavailable", "Conexión a la API no disponible", "Koneksyon API a pa disponib"),
+    "Impossible de charger cette catégorie" to listOf("Unable to load this category", "No se pudo cargar esta categoría", "Pa kapab chaje kategori sa a"),
+    "Session active • jetons protégés sur cet appareil" to listOf("Active session • tokens protected on this device", "Sesión activa • tokens protegidos en este dispositivo", "Sesyon aktif • jeton yo pwoteje sou aparèy sa a"),
+    "Téléchargement MovieHub" to listOf("MovieHub download", "Descarga de MovieHub", "Telechajman MovieHub"),
+    "Vidéo" to listOf("Video", "Video", "Videyo")
 )
 
 internal fun translateMovieHubText(value: String, language: String): String {
@@ -166,8 +180,11 @@ internal fun translateMovieHubText(value: String, language: String): String {
         value.endsWith(" résultat(s)") -> value.removeSuffix(" résultat(s)") + listOf(" result(s)", " resultado(s)", " rezilta")[index]
         value == "Connexion à l’API indisponible" -> listOf("API connection unavailable", "Conexión a la API no disponible", "Koneksyon API a pa disponib")[index]
         value == "Connexion impossible" -> listOf("Unable to sign in", "No se pudo iniciar sesión", "Koneksyon an pa reyisi")[index]
-        value == "Erreur API HTTP" -> listOf("API HTTP error", "Error HTTP de la API", "Erè HTTP API")[index]
+        value.startsWith("Erreur API HTTP ") -> listOf("API HTTP error ", "Error HTTP de la API ", "Erè HTTP API ")[index] + value.removePrefix("Erreur API HTTP ")
         value == "Action impossible" -> listOf("Action failed", "Acción fallida", "Aksyon an pa reyisi")[index]
+        value == "MOVIE" -> listOf("MOVIE", "PELÍCULA", "FIM")[index]
+        value == "SERIES" -> listOf("SERIES", "SERIES", "SERI")[index]
+        value == "ANIME" -> listOf("ANIME", "ANIME", "ANIME")[index]
         else -> value
     }
 }
