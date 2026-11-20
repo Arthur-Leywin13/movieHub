@@ -705,6 +705,45 @@ private fun MoviesHubApp() {
 }
 
 @Composable
+private fun LanguageSelectionScreen(onSelect: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxSize().background(UiColors.background).verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.moviehub_logo),
+            contentDescription = "MovieHub",
+            modifier = Modifier.size(116.dp),
+            contentScale = ContentScale.Fit
+        )
+        Spacer(Modifier.height(22.dp))
+        MovieHubText("Choisis ta langue", color = UiColors.text, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(8.dp))
+        MovieHubText(
+            "La langue pourra être modifiée à tout moment dans les paramètres.",
+            color = UiColors.muted,
+            fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(24.dp))
+        MovieHubLanguages.options.forEach { option ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(UiColors.panel)
+                    .clickable { onSelect(option.code) }
+                    .padding(horizontal = 18.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MovieHubText(option.nativeName, color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
+            }
+        }
+    }
+}
+
+@Composable
 private fun SplashScreen() {
     Box(Modifier.fillMaxSize().background(
         Brush.verticalGradient(listOf(Color(0xFF08090D), UiColors.background, Color(0xFF090B12)))
