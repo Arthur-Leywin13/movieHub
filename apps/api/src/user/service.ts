@@ -180,13 +180,6 @@ export class UserDataService {
     return ch;
   }
 
-  /** Lien temporaire de lecture (R2 signé), sans créer d'entrée de téléchargement. */
-  async startPlayback(versionId: string) {
-    const ch = await this.visibleChain(versionId);
-    await this.bump(ch.content.id, 'plays');
-    return { url: this.signer.presignGet(ch.objectKey, this.ttl), expiresInSeconds: this.ttl };
-  }
-
   /** Lien de téléchargement temporaire (R2 signé). Le fichier téléchargé reste ensuite sur l'appareil. */
   async startDownload(userId: string, versionId: string, opts: { appVersion?: string | null } = {}) {
     const ch = await this.visibleChain(versionId);
