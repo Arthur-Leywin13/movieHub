@@ -41,6 +41,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem as PlayerMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
@@ -405,11 +413,18 @@ private fun MoviesHubApp() {
     }
     val context = LocalContext.current
     var session by remember { mutableStateOf(SecureSessionStore.read(context)) }
+    val preferences = remember { context.getSharedPreferences("moviehub_preferences", 0) }
     var themeMode by remember {
-        mutableStateOf(context.getSharedPreferences("moviehub_preferences", 0).getString("theme", "Sombre") ?: "Sombre")
+        mutableStateOf(preferences.getString("theme", "Sombre") ?: "Sombre")
+    }
+    var appLanguage by remember {
+        mutableStateOf(preferences.getString("language", null))
     }
     LaunchedEffect(themeMode) {
-        context.getSharedPreferences("moviehub_preferences", 0).edit().putString("theme", themeMode).apply()
+        preferences.edit().putString("theme", themeMode).apply()
+    }
+    LaunchedEffect(appLanguage) {
+        appLanguage?.let { preferences.edit().putString("language", it).apply() }
     }
     var splash by remember { mutableStateOf(true) }
     BackHandler(enabled = !splash && screen != Screen.HOME) { goBack() }
@@ -448,7 +463,10 @@ private fun MoviesHubApp() {
     } else {
         MoviePalette(Color(0xFFF4F1E9), Color.White, Color(0xFF9A6500), Color(0xFF68645C), Color(0xFF191919))
     }
-    CompositionLocalProvider(LocalMoviePalette provides palette) {
+    CompositionLocalProvider(
+        LocalMoviePalette provides palette,
+        LocalMovieHubLanguage provides (appLanguage ?: "fr")
+    ) {
     MaterialTheme(colorScheme = if (useDark) darkColorScheme(
         primary = palette.accent, background = palette.background, surface = palette.panel,
         onPrimary = palette.background, onBackground = palette.text, onSurface = palette.text
@@ -458,6 +476,8 @@ private fun MoviesHubApp() {
     )) {
         if (splash) {
             SplashScreen()
+        } else if (appLanguage == null) {
+            LanguageSelectionScreen(onSelect = { appLanguage = it })
         } else {
             Scaffold(
                 containerColor = UiColors.background,
@@ -541,6 +561,10 @@ private fun MoviesHubApp() {
                             isFavorite = selected?.id in favoriteIds,
                             onBack = { goBack() },
                             onPlay = { navigate(Screen.PLAYER) },
+                            onDownload = { version ->
+                                if (session == null) navigate(Screen.AUTH)
+                                else enqueuePrivateDownload(context, selected, version)
+                            },
                             onFavorite = {
                                 val item = selected
                                 val current = session
@@ -665,12 +689,57 @@ private fun MoviesHubApp() {
                                 }
                             }
                         )
-                        Screen.SETTINGS -> SettingsScreen(themeMode = themeMode, onThemeChange = { themeMode = it }, onBack = { goBack() })
+                        Screen.SETTINGS -> SettingsScreen(
+                            themeMode = themeMode,
+                            language = appLanguage ?: "fr",
+                            onThemeChange = { themeMode = it },
+                            onLanguageChange = { appLanguage = it },
+                            onBack = { goBack() }
+                        )
                     }
                 }
             }
         }
     }
+    }
+}
+
+@Composable
+private fun LanguageSelectionScreen(onSelect: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxSize().background(UiColors.background).verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.moviehub_logo),
+            contentDescription = "MovieHub",
+            modifier = Modifier.size(116.dp),
+            contentScale = ContentScale.Fit
+        )
+        Spacer(Modifier.height(22.dp))
+        MovieHubText("Choisis ta langue", color = UiColors.text, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(8.dp))
+        MovieHubText(
+            "La langue pourra être modifiée à tout moment dans les paramètres.",
+            color = UiColors.muted,
+            fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(24.dp))
+        MovieHubLanguages.options.forEach { option ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(UiColors.panel)
+                    .clickable { onSelect(option.code) }
+                    .padding(horizontal = 18.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MovieHubText(option.nativeName, color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
+            }
+        }
     }
 }
 
@@ -686,10 +755,10 @@ private fun SplashScreen() {
                 modifier = Modifier.size(132.dp),
                 contentScale = ContentScale.Fit
             )
-            Text("Tes films, séries et animés\nau même endroit", color = UiColors.text, fontSize = 14.sp, lineHeight = 21.sp)
+            MovieHubText("Tes films, séries et animés\nau même endroit", color = UiColors.text, fontSize = 14.sp, lineHeight = 21.sp)
             Spacer(Modifier.height(95.dp))
             LinearProgressIndicator(color = UiColors.accent, trackColor = Color(0xFF332B1B), modifier = Modifier.width(170.dp))
-            Text("Chargement…", color = UiColors.muted, fontSize = 12.sp)
+            MovieHubText("Chargement…", color = UiColors.muted, fontSize = 12.sp)
         }
     }
 }
@@ -708,7 +777,7 @@ private fun BottomNavigationBar(screen: Screen, onNavigate: (Screen) -> Unit) {
                 selected = screen == destination || (destination == Screen.HOME && screen in listOf(Screen.SEARCH, Screen.DETAIL, Screen.PLAYER)),
                 onClick = { onNavigate(destination) },
                 icon = { Icon(icon, contentDescription = label) },
-                label = { Text(label, fontSize = 10.sp) },
+                label = { MovieHubText(label, fontSize = 10.sp) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = UiColors.accent, selectedTextColor = UiColors.accent,
                     unselectedIconColor = UiColors.muted, unselectedTextColor = UiColors.muted,
@@ -726,7 +795,7 @@ private fun Header(title: String = "MoviesHub", onCategories: (() -> Unit)? = nu
             Image(painterResource(R.drawable.moviehub_logo), contentDescription = "Logo MovieHub", modifier = Modifier.size(38.dp), contentScale = ContentScale.Fit)
             Spacer(Modifier.width(10.dp))
         }
-        Text(title, color = UiColors.accent, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        MovieHubText(title, color = UiColors.accent, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         if (onSearch != null) IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Recherche", tint = UiColors.text) }
     }
 }
@@ -736,7 +805,7 @@ private fun FilterChips(active: String, onSelect: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("Tous", "Films", "Séries", "Animes").forEach { label ->
             FilterChip(
-                selected = active == label, onClick = { onSelect(label) }, label = { Text(label) },
+                selected = active == label, onClick = { onSelect(label) }, label = { MovieHubText(label) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = UiColors.accent, selectedLabelColor = UiColors.background,
                     containerColor = UiColors.panel, labelColor = UiColors.text
@@ -774,8 +843,8 @@ private fun HomeScreen(
                     contentScale = ContentScale.Fit
                 )
                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                    Text("MOVIEHUB", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
-                    Text("Ton prochain univers commence ici", color = UiColors.muted, fontSize = 10.sp)
+                    MovieHubText("MOVIEHUB", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
+                    MovieHubText("Ton prochain univers commence ici", color = UiColors.muted, fontSize = 10.sp)
                 }
                 IconButton(onClick = onSearch) {
                     Icon(Icons.Default.Search, "Rechercher", tint = UiColors.text, modifier = Modifier.size(25.dp))
@@ -786,7 +855,7 @@ private fun HomeScreen(
             }
         }
         item {
-            Text(
+            MovieHubText(
                 "À LA UNE",
                 color = UiColors.accent,
                 fontSize = 10.sp,
@@ -823,14 +892,14 @@ private fun HomeScreen(
                         Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
+                        MovieHubText(
                             "SÉLECTION MOVIEHUB",
                             color = UiColors.accent,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.8.sp
                         )
-                        Text(
+                        MovieHubText(
                             featured.title,
                             color = Color.White,
                             fontSize = 27.sp,
@@ -839,12 +908,12 @@ private fun HomeScreen(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Text(
+                        MovieHubText(
                             listOf(featured.type, featured.year).filter { it.isNotBlank() }.joinToString("  •  "),
                             color = Color.White.copy(alpha = .78f),
                             fontSize = 12.sp
                         )
-                        Text(
+                        MovieHubText(
                             featured.description.ifBlank { "Retrouve ce contenu dans le catalogue MovieHub." },
                             color = Color.White.copy(alpha = .78f),
                             fontSize = 12.sp,
@@ -862,7 +931,7 @@ private fun HomeScreen(
                         ) {
                             Icon(Icons.Default.Info, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(7.dp))
-                            Text("Voir les détails", fontWeight = FontWeight.Bold)
+                            MovieHubText("Voir les détails", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -883,8 +952,8 @@ private fun HomeScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                         Icon(Icons.Default.Movie, null, tint = UiColors.accent, modifier = Modifier.size(42.dp))
                         Spacer(Modifier.height(12.dp))
-                        Text("Le cinéma, à portée de main.", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
+                        MovieHubText("Le cinéma, à portée de main.", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        MovieHubText(
                             error ?: "Les nouveautés apparaîtront ici dès leur publication.",
                             color = UiColors.muted, fontSize = 12.sp
                         )
@@ -893,7 +962,7 @@ private fun HomeScreen(
             }
         }
         item {
-            Text(
+            MovieHubText(
                 "EXPLORER LE CATALOGUE",
                 color = UiColors.muted,
                 fontSize = 10.sp,
@@ -942,11 +1011,11 @@ private fun HomeScreen(
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(Color(0xCC090B0F)).padding(horizontal = 7.dp, vertical = 4.dp)
                                 ) {
-                                    Text(item.type.uppercase(), color = UiColors.accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                    MovieHubText(item.type.uppercase(), color = UiColors.accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
-                            Text(item.title, color = UiColors.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
-                            Text(item.year.ifBlank { "Découvrir" }, color = UiColors.muted, fontSize = 11.sp)
+                            MovieHubText(item.title, color = UiColors.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+                            MovieHubText(item.year.ifBlank { "Découvrir" }, color = UiColors.muted, fontSize = 11.sp)
                         }
                     }
                 }
@@ -967,7 +1036,7 @@ private fun HomeScreen(
         item {
             Spacer(Modifier.height(12.dp))
             TextButton(onClick = onCategories, modifier = Modifier.fillMaxWidth()) {
-                Text("Explorer toutes les catégories", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
+                MovieHubText("Explorer toutes les catégories", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(6.dp))
                 Icon(Icons.Default.ArrowForward, null, tint = UiColors.accent)
             }
@@ -978,8 +1047,8 @@ private fun HomeScreen(
 @Composable
 private fun SectionTitle(title: String, action: String) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        Text(action, color = UiColors.accent, fontSize = 12.sp)
+        MovieHubText(title, color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        MovieHubText(action, color = UiColors.accent, fontSize = 12.sp)
     }
 }
 
@@ -1009,15 +1078,15 @@ private fun MediaPoster(item: MediaItem, onClick: () -> Unit) {
             Modifier.weight(1f).padding(start = 13.dp, end = 8.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Text(item.title, color = UiColors.text, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(
+            MovieHubText(item.title, color = UiColors.text, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            MovieHubText(
                 listOf(item.type, item.year).filter { it.isNotBlank() }.joinToString("  •  "),
                 color = UiColors.accent, fontSize = 11.sp, fontWeight = FontWeight.Medium
             )
             if (item.description.isNotBlank()) {
-                Text(item.description, color = UiColors.muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                MovieHubText(item.description, color = UiColors.muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Text("Voir la fiche", color = UiColors.text.copy(alpha = .75f), fontSize = 10.sp)
+            MovieHubText("Voir la fiche", color = UiColors.text.copy(alpha = .75f), fontSize = 10.sp)
         }
         Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
     }
@@ -1037,11 +1106,11 @@ private fun CategoriesScreen(
     val activeName = genres.firstOrNull { it.slug == active }?.name ?: active
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Explorer", color = UiColors.text, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            MovieHubText("Explorer", color = UiColors.text, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Retour", tint = UiColors.text) }
         }
         if (active == "Tous") {
-            Text("Choisis un univers", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+            MovieHubText("Choisis un univers", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
             if (genres.isEmpty()) {
                 EmptyMessage("Les catégories apparaîtront ici dès qu'elles seront disponibles dans le catalogue.")
             } else {
@@ -1071,15 +1140,15 @@ private fun CategoriesScreen(
                                     else -> Icons.Default.Movie
                                 }, null, tint = UiColors.accent, modifier = Modifier.size(25.dp)
                             )
-                            Text(category.name, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            MovieHubText(category.name, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
                 }
             }
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(activeName, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = onClearFilter) { Text("Toutes", color = UiColors.accent) }
+                MovieHubText(activeName, color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearFilter) { MovieHubText("Toutes", color = UiColors.accent) }
             }
             if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
             if (!loading && media.isEmpty()) EmptyMessage("Aucun résultat pour cette catégorie pour le moment.")
@@ -1118,7 +1187,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
             value = query,
             onValueChange = onQuery,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            placeholder = { Text("Film, série, anime…", color = UiColors.muted) },
+            placeholder = { MovieHubText("Film, série, anime…", color = UiColors.muted) },
             singleLine = true,
             trailingIcon = {
                 if (query.isNotEmpty()) {
@@ -1146,13 +1215,13 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
                 ) {
                     Icon(Icons.Default.Search, null, tint = UiColors.accent, modifier = Modifier.size(48.dp))
                     Spacer(Modifier.height(12.dp))
-                    Text("Que veux-tu regarder ?", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("Saisis au moins deux caractères pour rechercher dans le catalogue.", color = UiColors.muted, fontSize = 13.sp)
+                    MovieHubText("Que veux-tu regarder ?", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    MovieHubText("Saisis au moins deux caractères pour rechercher dans le catalogue.", color = UiColors.muted, fontSize = 13.sp)
                 }
             }
             loading -> {
                 LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(16.dp))
-                Text("Recherche en cours…", color = UiColors.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
+                MovieHubText("Recherche en cours…", color = UiColors.muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
             }
             error != null -> {
                 EmptyMessage(error!!)
@@ -1161,7 +1230,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
                 EmptyMessage("Aucun résultat pour « ${query.trim()} ». Essaie un autre titre.")
             }
             else -> {
-                Text(
+                MovieHubText(
                     "${results.size} résultat(s)",
                     color = UiColors.accent,
                     fontWeight = FontWeight.Bold,
@@ -1178,7 +1247,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onDownload: (VideoVersion) -> Unit, onFavorite: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(
             Modifier.fillMaxWidth().height(390.dp)
@@ -1216,9 +1285,9 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
                 Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text("FICHE DU CONTENU", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
-                Text(item?.title ?: "Détails", color = Color.White, fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.ExtraBold)
-                Text(
+                MovieHubText("FICHE DU CONTENU", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
+                MovieHubText(item?.title ?: "Détails", color = Color.White, fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.ExtraBold)
+                MovieHubText(
                     listOf(item?.type ?: "Film", item?.year ?: "").filter { it.isNotBlank() }.joinToString("  •  "),
                     color = Color.White.copy(alpha = .8f), fontSize = 12.sp
                 )
@@ -1226,9 +1295,9 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
         }
         Column(Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
             if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth())
-            Text("Synopsis", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            MovieHubText("Synopsis", color = UiColors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text(
+            MovieHubText(
                 item?.description?.ifBlank { "La description sera affichée à partir des métadonnées du catalogue." }
                     ?: "Les informations du contenu seront chargées depuis MovieHub.",
                 color = UiColors.muted, fontSize = 13.sp, lineHeight = 20.sp
@@ -1248,12 +1317,27 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             ) {
                 Icon(Icons.Default.PlayArrow, null)
                 Spacer(Modifier.width(7.dp))
-                Text(
+                MovieHubText(
                     if (!item?.versions.isNullOrEmpty()) "Regarder le film"
                     else if (item?.trailerUrl.isNullOrBlank()) "Lecture indisponible"
                     else "Voir la bande-annonce",
                     fontWeight = FontWeight.Bold
                 )
+            }
+            if (!item?.versions.isNullOrEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                MovieHubText("TÉLÉCHARGER HORS CONNEXION", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                item?.versions.orEmpty().forEach { version ->
+                    OutlinedButton(
+                        onClick = { onDownload(version) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                    ) {
+                        Icon(Icons.Default.Download, null)
+                        Spacer(Modifier.width(8.dp))
+                        MovieHubText("Télécharger ${version.label}")
+                    }
+                }
             }
             Spacer(Modifier.height(9.dp))
             OutlinedButton(
@@ -1264,11 +1348,11 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             ) {
                 Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
                 Spacer(Modifier.width(7.dp))
-                Text(if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris")
+                MovieHubText(if (isFavorite) "Retirer des favoris" else "Ajouter aux favoris")
             }
             Spacer(Modifier.height(10.dp))
-            Text(
-                "Le téléchargement sera disponible lorsque le service de téléchargement sera connecté à cette fiche.",
+            MovieHubText(
+                "Les versions publiées peuvent être téléchargées dans l’espace privé de MovieHub.",
                 color = UiColors.muted, fontSize = 11.sp, lineHeight = 16.sp
             )
             Spacer(Modifier.height(22.dp))
@@ -1338,17 +1422,17 @@ private fun PlayerScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
-            Text(item?.title ?: "Lecteur vidéo", color = UiColors.text, fontWeight = FontWeight.Bold)
+            MovieHubText(item?.title ?: "Lecteur vidéo", color = UiColors.text, fontWeight = FontWeight.Bold)
         }
 
         if (versions.isNotEmpty()) {
-            Text("Qualité vidéo", color = UiColors.text, fontWeight = FontWeight.SemiBold)
+            MovieHubText("Qualité vidéo", color = UiColors.text, fontWeight = FontWeight.SemiBold)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 versions.forEach { version ->
                     FilterChip(
                         selected = selectedVersion?.id == version.id,
                         onClick = { selectedVersion = version; videoUrl = null; playbackError = null },
-                        label = { Text(version.label) },
+                        label = { MovieHubText(version.label) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = UiColors.accent,
                             selectedLabelColor = Color(0xFF100D07),
@@ -1360,7 +1444,7 @@ private fun PlayerScreen(
             if (resumePositionSeconds > 5 && (resumeVersionId == null || resumeVersionId == selectedVersion?.id)) {
                 val minutes = resumePositionSeconds / 60
                 val seconds = resumePositionSeconds % 60
-                Text("Reprise disponible à ${minutes}:${seconds.toString().padStart(2, '0')}", color = UiColors.accent, fontSize = 12.sp)
+                MovieHubText("Reprise disponible à ${minutes}:${seconds.toString().padStart(2, '0')}", color = UiColors.accent, fontSize = 12.sp)
             }
             Button(
                 onClick = {
@@ -1393,21 +1477,21 @@ private fun PlayerScreen(
                 else Icon(Icons.Default.PlayArrow, null)
                 Spacer(Modifier.width(8.dp))
                 val canResume = resumePositionSeconds > 5 && (resumeVersionId == null || resumeVersionId == selectedVersion?.id)
-                Text(if (loading) "Préparation…" else if (canResume) "Reprendre la lecture" else "Lire cette version", fontWeight = FontWeight.Bold)
+                MovieHubText(if (loading) "Préparation…" else if (canResume) "Reprendre la lecture" else "Lire cette version", fontWeight = FontWeight.Bold)
             }
         } else if (!item?.trailerUrl.isNullOrBlank()) {
-            Text("Bande-annonce", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
+            MovieHubText("Bande-annonce", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
         } else {
-            Text("Aucune version vidéo ni bande-annonce publiée.", color = UiColors.muted)
+            MovieHubText("Aucune version vidéo ni bande-annonce publiée.", color = UiColors.muted)
         }
 
-        playbackError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+        playbackError?.let { MovieHubText(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
 
         if (videoUrl.isNullOrBlank()) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF171D26)), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.PlayCircleOutline, null, tint = UiColors.accent, modifier = Modifier.size(46.dp))
-                    Text("La vidéo apparaîtra ici", color = UiColors.muted, fontSize = 12.sp)
+                    MovieHubText("La vidéo apparaîtra ici", color = UiColors.muted, fontSize = 12.sp)
                 }
             }
         } else {
@@ -1467,7 +1551,7 @@ private fun PlayerScreen(
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))
             )
         }
-        Text(
+        MovieHubText(
             if (versions.isNotEmpty()) "La progression est synchronisée automatiquement lorsque tu regardes un film."
             else "Aperçu de la bande-annonce officielle.",
             color = UiColors.muted, fontSize = 12.sp
@@ -1475,36 +1559,93 @@ private fun PlayerScreen(
     }
 }
 
+
+private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null) {
+    val title = titleOverride ?: item?.title ?: "Film MovieHub"
+    val request = OneTimeWorkRequestBuilder<PrivateDownloadWorker>()
+        .setInputData(
+            Data.Builder()
+                .putString("versionId", version.id)
+                .putString("title", title)
+                .putString("versionLabel", version.label)
+                .build()
+        )
+        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+        .addTag(PrivateDownloadWorker.TAG)
+        .build()
+    WorkManager.getInstance(context).enqueueUniqueWork(
+        "moviehub-download-${version.id}",
+        ExistingWorkPolicy.REPLACE,
+        request
+    )
+}
+
 @Composable
 private fun DownloadsScreen() {
+    val context = LocalContext.current
+    val workInfos by WorkManager.getInstance(context).getWorkInfosByTagLiveData(PrivateDownloadWorker.TAG).observeAsState(emptyList())
     var transferMode by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Header("Téléchargements")
-        Text("Ta bibliothèque hors connexion", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp))
+        MovieHubText("Ta bibliothèque hors connexion", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             listOf("Partager", "Recevoir").forEach { action ->
                 OutlinedButton(onClick = { transferMode = action }, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
                     Icon(if (action == "Partager") Icons.Default.Share else Icons.Default.Download, null)
-                    Spacer(Modifier.width(6.dp)); Text(action)
+                    Spacer(Modifier.width(6.dp)); MovieHubText(action)
                 }
             }
         }
-        Spacer(Modifier.height(28.dp))
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.DownloadForOffline, null, tint = UiColors.accent, modifier = Modifier.size(62.dp))
-                Spacer(Modifier.height(14.dp))
-                Text("Aucun téléchargement", color = UiColors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("Les vidéos enregistrées apparaîtront ici.", color = UiColors.muted, fontSize = 13.sp)
-                Text("Elles resteront dans l’espace privé de MovieHub et ne seront pas visibles dans la galerie publique.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(18.dp))
+        if (workInfos.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.DownloadForOffline, null, tint = UiColors.accent, modifier = Modifier.size(62.dp))
+                    Spacer(Modifier.height(14.dp))
+                    MovieHubText("Aucun téléchargement", color = UiColors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    MovieHubText("Les vidéos enregistrées apparaîtront ici.", color = UiColors.muted, fontSize = 13.sp)
+                    MovieHubText("Les fichiers terminés restent dans l’espace privé de MovieHub, invisibles dans la galerie publique.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(workInfos, key = { it.id }) { info ->
+                    val title = info.outputData.getString("title") ?: info.progress.getString("title") ?: "Téléchargement MovieHub"
+                    val label = info.outputData.getString("versionLabel") ?: info.progress.getString("versionLabel") ?: "Vidéo"
+                    val percent = info.progress.getInt("progressPercent", if (info.state == WorkInfo.State.SUCCEEDED) 100 else 0)
+                    Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            MovieHubText(title, color = UiColors.text, fontWeight = FontWeight.Bold)
+                            MovieHubText(label, color = UiColors.muted, fontSize = 12.sp)
+                            when (info.state) {
+                                WorkInfo.State.RUNNING, WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                                    LinearProgressIndicator(progress = { percent / 100f }, color = UiColors.accent, modifier = Modifier.fillMaxWidth())
+                                    MovieHubText(if (info.state == WorkInfo.State.RUNNING) "Téléchargement : $percent %" else "En attente du réseau…", color = UiColors.muted, fontSize = 11.sp)
+                                    TextButton(onClick = { WorkManager.getInstance(context).cancelWorkById(info.id) }) { MovieHubText("Mettre en pause", color = UiColors.accent) }
+                                }
+                                WorkInfo.State.SUCCEEDED -> MovieHubText("Téléchargement terminé • enregistré en privé", color = UiColors.accent, fontSize = 12.sp)
+                                WorkInfo.State.CANCELLED -> {
+                                    MovieHubText("En pause • fichier partiel conservé en privé", color = UiColors.muted, fontSize = 12.sp)
+                                    val versionId = info.progress.getString("versionId")
+                                    if (versionId != null) {
+                                        TextButton(onClick = { enqueuePrivateDownload(context, null, VideoVersion(versionId, label, null, null), title) }) {
+                                            MovieHubText("Reprendre", color = UiColors.accent)
+                                        }
+                                    }
+                                }
+                                WorkInfo.State.FAILED -> MovieHubText(info.outputData.getString("error") ?: "Échec du téléchargement", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
             }
         }
         if (transferMode != null) {
             Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(if (transferMode == "Partager") "Envoyer un téléchargement" else "Recevoir un fichier", color = UiColors.text, fontWeight = FontWeight.Bold)
-                    Text("Le transfert local sécurisé sera lancé depuis cette section. L’interface est prête, le moteur de transfert reste à connecter.", color = UiColors.muted, fontSize = 12.sp)
-                    TextButton(onClick = { transferMode = null }) { Text("Fermer", color = UiColors.accent) }
+                    MovieHubText(if (transferMode == "Partager") "Envoyer un téléchargement" else "Recevoir un fichier", color = UiColors.text, fontWeight = FontWeight.Bold)
+                    MovieHubText("Le transfert local sécurisé sera lancé depuis cette section. L’interface est prête, le moteur de transfert reste à connecter.", color = UiColors.muted, fontSize = 12.sp)
+                    TextButton(onClick = { transferMode = null }) { MovieHubText("Fermer", color = UiColors.accent) }
                 }
             }
         }
@@ -1518,7 +1659,7 @@ private fun ShareScreen() {
         Header("Partage")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf("Envoyer", "Recevoir").forEach { option ->
-                FilterChip(selected = mode == option, onClick = { mode = option }, label = { Text(option) },
+                FilterChip(selected = mode == option, onClick = { mode = option }, label = { MovieHubText(option) },
                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = UiColors.accent, selectedLabelColor = UiColors.background, labelColor = UiColors.text),
                     border = null)
             }
@@ -1526,13 +1667,13 @@ private fun ShareScreen() {
         Spacer(Modifier.height(35.dp))
         Icon(Icons.Default.Devices, null, tint = UiColors.accent, modifier = Modifier.size(72.dp))
         Spacer(Modifier.height(18.dp))
-        Text(if (mode == "Envoyer") "Partager tes fichiers" else "Recevoir des fichiers", color = UiColors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text("Transfert local entre appareils, sans passer par le stockage cloud.", color = UiColors.muted, fontSize = 13.sp)
+        MovieHubText(if (mode == "Envoyer") "Partager tes fichiers" else "Recevoir des fichiers", color = UiColors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        MovieHubText("Transfert local entre appareils, sans passer par le stockage cloud.", color = UiColors.muted, fontSize = 13.sp)
         Spacer(Modifier.height(24.dp))
         Button(onClick = {}, colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background)) {
-            Text(if (mode == "Envoyer") "Choisir un fichier" else "Rechercher un appareil")
+            MovieHubText(if (mode == "Envoyer") "Choisir un fichier" else "Rechercher un appareil")
         }
-        Text("Le transfert Wi-Fi direct et l’appairage QR seront implémentés dans une étape dédiée.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 22.dp))
+        MovieHubText("Le transfert Wi-Fi direct et l’appairage QR seront implémentés dans une étape dédiée.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 22.dp))
     }
 }
 
@@ -1543,50 +1684,50 @@ private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavo
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.AccountCircle, null, tint = UiColors.accent, modifier = Modifier.size(76.dp))
-                Text(session?.user?.displayName ?: "Bienvenue sur MovieHub", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text(session?.user?.email ?: "Connecte-toi pour synchroniser tes favoris et ton historique.", color = UiColors.muted, fontSize = 12.sp)
+                MovieHubText(session?.user?.displayName ?: "Bienvenue sur MovieHub", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                MovieHubText(session?.user?.email ?: "Connecte-toi pour synchroniser tes favoris et ton historique.", color = UiColors.muted, fontSize = 12.sp)
                 if (session == null) {
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = onLogin, colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background)) {
-                        Text("Se connecter / Créer un compte")
+                        MovieHubText("Se connecter / Créer un compte")
                     }
                 } else {
                     Spacer(Modifier.height(8.dp))
-                    Text("Compte connecté", color = UiColors.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    MovieHubText("Compte connecté", color = UiColors.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
         Spacer(Modifier.height(24.dp))
         Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("Sécurité du compte", color = UiColors.text, fontWeight = FontWeight.SemiBold)
-                Text(if (session == null) "Aucune session active" else "Session active • jetons protégés sur cet appareil", color = UiColors.muted, fontSize = 12.sp)
-                Text("Les identifiants de session sont stockés de manière chiffrée et ne sont jamais affichés.", color = UiColors.muted, fontSize = 11.sp)
+                MovieHubText("Sécurité du compte", color = UiColors.text, fontWeight = FontWeight.SemiBold)
+                MovieHubText(if (session == null) "Aucune session active" else "Session active • jetons protégés sur cet appareil", color = UiColors.muted, fontSize = 12.sp)
+                MovieHubText("Les identifiants de session sont stockés de manière chiffrée et ne sont jamais affichés.", color = UiColors.muted, fontSize = 11.sp)
             }
         }
         if (session != null) {
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)) {
-                Icon(Icons.Default.Logout, null); Spacer(Modifier.width(8.dp)); Text("Se déconnecter")
+                Icon(Icons.Default.Logout, null); Spacer(Modifier.width(8.dp)); MovieHubText("Se déconnecter")
             }
         }
         Spacer(Modifier.height(12.dp))
         listOf("Mes favoris" to onFavorites, "Historique de visionnage" to onHistory).forEach { (label, action) ->
             Row(Modifier.fillMaxWidth().clickable(onClick = action).padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(label, color = UiColors.text, modifier = Modifier.weight(1f))
+                MovieHubText(label, color = UiColors.text, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
             }
             HorizontalDivider(color = Color(0xFF242932))
         }
         Row(Modifier.fillMaxWidth().clickable(onClick = onSettings).padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Settings, null, tint = UiColors.accent); Spacer(Modifier.width(12.dp))
-            Text("Paramètres", color = UiColors.text, modifier = Modifier.weight(1f))
+            MovieHubText("Paramètres", color = UiColors.text, modifier = Modifier.weight(1f))
             Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
         }
         HorizontalDivider(color = Color(0xFF242932))
         listOf("Aide & support", "À propos").forEach { label ->
             Row(Modifier.fillMaxWidth().clickable {}.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(label, color = UiColors.text, modifier = Modifier.weight(1f))
+                MovieHubText(label, color = UiColors.text, modifier = Modifier.weight(1f))
                 Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
             }
             HorizontalDivider(color = Color(0xFF242932))
@@ -1607,10 +1748,10 @@ private fun AccountListScreen(
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Retour", tint = UiColors.text) }
-            Text(title, color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            MovieHubText(title, color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
         if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth())
-        if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+        if (error != null) MovieHubText(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
         if (!loading && items.isEmpty()) EmptyMessage("Aucun contenu pour le moment.")
         LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
             items(items, key = { it.id }) { item ->
@@ -1641,18 +1782,18 @@ private fun AuthScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Retour", tint = UiColors.text) }
         Spacer(Modifier.height(18.dp))
-        Text(if (register) "Créer un compte" else "Bienvenue", color = UiColors.text, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
-        Text(if (register) "Rejoins MovieHub pour retrouver tes contenus." else "Connecte-toi pour synchroniser ton profil.", color = UiColors.muted, fontSize = 13.sp)
+        MovieHubText(if (register) "Créer un compte" else "Bienvenue", color = UiColors.text, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+        MovieHubText(if (register) "Rejoins MovieHub pour retrouver tes contenus." else "Connecte-toi pour synchroniser ton profil.", color = UiColors.muted, fontSize = 13.sp)
         Spacer(Modifier.height(24.dp))
         if (register) {
-            OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { Text("Nom affiché") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { MovieHubText("Nom affiché") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(10.dp))
         }
-        OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Adresse e-mail") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = email, onValueChange = { email = it }, label = { MovieHubText("Adresse e-mail") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(10.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Mot de passe") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
-        if (register) Text("8 caractères minimum.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
-        if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+        OutlinedTextField(value = password, onValueChange = { password = it }, label = { MovieHubText("Mot de passe") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        if (register) MovieHubText("8 caractères minimum.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+        if (error != null) MovieHubText(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
         Spacer(Modifier.height(18.dp))
         Button(
             onClick = {
@@ -1665,31 +1806,54 @@ private fun AuthScreen(
             colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background)
         ) {
             if (submitting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            else Text(if (register) "Créer mon compte" else "Se connecter")
+            else MovieHubText(if (register) "Créer mon compte" else "Se connecter")
         }
         TextButton(onClick = { register = !register; onErrorConsumed() }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (register) "J’ai déjà un compte" else "Créer un compte", color = UiColors.accent)
+            MovieHubText(if (register) "J’ai déjà un compte" else "Créer un compte", color = UiColors.accent)
         }
     }
 }
 
 @Composable
 private fun EmptyMessage(message: String) {
-    Text(message, color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(22.dp))
+    MovieHubText(message, color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(22.dp))
 }
 
 @Composable
-private fun SettingsScreen(themeMode: String, onThemeChange: (String) -> Unit, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
+private fun SettingsScreen(
+    themeMode: String,
+    language: String,
+    onThemeChange: (String) -> Unit,
+    onLanguageChange: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
-            Text("Paramètres", color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            MovieHubText("Paramètres", color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(20.dp))
-        Text("APPARENCE", color = UiColors.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+        MovieHubText("LANGUE", color = UiColors.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+        MovieHubText("Langue de l’application", color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        MovieHubText("Choisis la langue de toute l’interface MovieHub.", color = UiColors.muted, fontSize = 12.sp)
+        Spacer(Modifier.height(10.dp))
+        MovieHubLanguages.options.forEach { option ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(if (language == option.code) Color(0xFF282113) else UiColors.panel)
+                    .clickable { onLanguageChange(option.code) }.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MovieHubText(option.nativeName, color = UiColors.text, modifier = Modifier.weight(1f))
+                RadioButton(selected = language == option.code, onClick = { onLanguageChange(option.code) }, colors = RadioButtonDefaults.colors(selectedColor = UiColors.accent))
+            }
+            Spacer(Modifier.height(7.dp))
+        }
+        Spacer(Modifier.height(18.dp))
+        MovieHubText("APPARENCE", color = UiColors.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
         Spacer(Modifier.height(8.dp))
-        Text("Thème de l’application", color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        Text("Choisis l’apparence de MovieHub.", color = UiColors.muted, fontSize = 12.sp)
+        MovieHubText("Thème de l’application", color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        MovieHubText("Choisis l’apparence de MovieHub.", color = UiColors.muted, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
         listOf("Sombre", "Clair", "Système").forEach { option ->
             Row(
@@ -1706,12 +1870,12 @@ private fun SettingsScreen(themeMode: String, onThemeChange: (String) -> Unit, o
                     }, null, tint = UiColors.accent
                 )
                 Spacer(Modifier.width(12.dp))
-                Text(option, color = UiColors.text, modifier = Modifier.weight(1f))
+                MovieHubText(option, color = UiColors.text, modifier = Modifier.weight(1f))
                 RadioButton(selected = themeMode == option, onClick = { onThemeChange(option) }, colors = RadioButtonDefaults.colors(selectedColor = UiColors.accent))
             }
             Spacer(Modifier.height(8.dp))
         }
         Spacer(Modifier.height(18.dp))
-        Text("Les préférences sont enregistrées sur cet appareil.", color = UiColors.muted, fontSize = 11.sp)
+        MovieHubText("Les préférences sont enregistrées sur cet appareil.", color = UiColors.muted, fontSize = 11.sp)
     }
 }
