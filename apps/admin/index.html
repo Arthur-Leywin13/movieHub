@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0b0d">
+  <meta name="description" content="Tableau de bord d’administration MovieHub">
+  <title>MovieHub — Administration</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="loginView" class="login-shell">
+    <section class="login-card">
+      <div class="brand-mark">M<span>H</span></div>
+      <p class="eyebrow">ESPACE SÉCURISÉ</p>
+      <h1>Administration <span>MovieHub</span></h1>
+      <p class="muted">Connecte-toi avec ton compte administrateur MovieHub.</p>
+      <form id="loginForm" class="stack">
+        <label>Adresse e-mail<input id="apiUrl" type="url" value="http://localhost:3000" autocomplete="url" required></label>
+        <label>E-mail<input id="loginEmail" type="email" autocomplete="username" required></label>
+        <label>Mot de passe<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+        <button class="btn primary full" type="submit">Se connecter <span>→</span></button>
+      </form>
+      <p id="loginError" class="notice error hidden" role="alert"></p>
+      <p class="login-foot">Accès réservé aux administrateurs autorisés.</p>
+    </section>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="MovieHub Administration">
+        <span class="brand-mark small">M<span>H</span></span>
+        <span><strong>MOVIEHUB</strong><small>ADMINISTRATION</small></span>
+      </a>
+      <div class="side-label">ESPACE DE TRAVAIL</div>
+      <nav class="nav-list" aria-label="Navigation principale">
+        <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span>Vue générale</button>
+        <button class="nav-item" data-view="catalog"><span class="nav-icon">▤</span>Catalogue</button>
+        <button class="nav-item" data-view="uploads"><span class="nav-icon">⇧</span>Fichiers média</button>
+        <button class="nav-item" data-view="planning"><span class="nav-icon">◷</span>Programmation</button>
+        <button class="nav-item" data-view="notifications"><span class="nav-icon">◉</span>Notifications</button>
+        <button class="nav-item" data-view="withdrawals"><span class="nav-icon">⌁</span>Retraits</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="secure-chip"><span class="status-dot"></span><span>Session sécurisée</span></div>
+        <div class="admin-user"><div class="avatar">A</div><div class="admin-meta"><strong id="adminName">Administrateur</strong><small id="adminEmail"></small></div></div>
+        <button id="logoutButton" class="logout-button">↪ Déconnexion</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div><p class="eyebrow" id="topEyebrow">MOVIEHUB / ADMIN</p><h1 id="pageTitle">Vue générale</h1></div>
+        <div class="top-actions"><span class="live-pill"><i></i> Connecté à l’API</span><button class="icon-button" id="refreshButton" title="Actualiser" aria-label="Actualiser">↻</button></div>
+      </header>
+      <div id="globalNotice" class="notice hidden" role="status"></div>
+
+      <section class="view active" id="view-overview">
+        <div class="welcome-row"><div><p class="eyebrow">CENTRE DE CONTRÔLE</p><h2>Bonjour, <span id="welcomeName">administrateur</span>.</h2><p class="muted">Voici l’activité actuelle de ton catalogue.</p></div><button class="btn primary" data-action="new-content">＋ Ajouter un contenu</button></div>
+        <div class="stat-grid">
+          <article class="stat-card"><span class="stat-label">CONTENUS</span><strong id="statTotal">—</strong><small>Total global dans le catalogue</small><span class="stat-symbol">▤</span></article>
+          <article class="stat-card"><span class="stat-label">PUBLIÉS</span><strong id="statPublished">—</strong><small>Sur les 50 fiches chargées</small><span class="stat-symbol">◉</span></article>
+          <article class="stat-card"><span class="stat-label">EN PRÉPARATION</span><strong id="statDraft">—</strong><small>Sur les 50 fiches chargées</small><span class="stat-symbol">✎</span></article>
+          <article class="stat-card"><span class="stat-label">PROGRAMMÉS</span><strong id="statScheduled">—</strong><small>Actions en attente (100 dernières)</small><span class="stat-symbol">◷</span></article>
+        </div>
+        <div class="panel-grid">
+          <section class="panel"><div class="panel-heading"><div><p class="eyebrow">DERNIÈRES FICHES</p><h3>Catalogue récent</h3></div><button class="text-button" data-view="catalog">Tout voir →</button></div><div id="recentContent" class="recent-list"><div class="loading-line">Chargement du catalogue…</div></div></section>
+          <section class="panel quick-panel"><div class="panel-heading"><div><p class="eyebrow">ACTIONS RAPIDES</p><h3>Gérer MovieHub</h3></div></div>
+            <button class="quick-action" data-action="new-content"><span>＋</span><div><strong>Créer une fiche</strong><small>Film, série ou animé</small></div><b>→</b></button>
+            <button class="quick-action" data-view="uploads"><span>⇧</span><div><strong>Envoyer un média</strong><small>Vidéo, affiche ou sous-titre</small></div><b>→</b></button>
+            <button class="quick-action" data-view="notifications"><span>◉</span><div><strong>Envoyer une notification</strong><small>Informer les utilisateurs</small></div><b>→</b></button>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-catalog">
+        <div class="section-toolbar"><div><p class="muted">Recherche et gestion des films, séries et animés.</p></div><button class="btn primary" data-action="new-content">＋ Nouveau contenu</button></div>
+        <div class="filter-bar">
+          <div class="search-field"><span>⌕</span><input id="catalogSearch" type="search" placeholder="Rechercher par titre…" autocomplete="off"></div>
+          <select id="catalogType"><option value="">Tous les types</option><option value="MOVIE">Films</option><option value="SERIES">Séries</option><option value="ANIME">Animés</option></select>
+          <select id="catalogStatus"><option value="">Tous les statuts</option><option>DRAFT</option><option>IN_PREPARATION</option><option>SCHEDULED</option><option>PUBLISHED</option><option>UNPUBLISHED</option><option>WITHDRAWN</option><option>ARCHIVED</option></select>
+          <button class="btn secondary" id="searchCatalogButton">Filtrer</button>
+        </div>
+        <div class="panel table-panel"><div class="table-heading"><strong>Contenus</strong><span id="catalogCount" class="muted">—</span></div><div class="table-wrap"><table><thead><tr><th>TITRE</th><th>TYPE</th><th>ANNÉE</th><th>STATUT</th><th></th></tr></thead><tbody id="catalogRows"><tr><td colspan="5" class="empty-cell">Chargement…</td></tr></tbody></table></div><div class="pagination"><button class="btn ghost" id="prevPage">← Précédent</button><span id="pageInfo">Page 1</span><button class="btn ghost" id="nextPage">Suivant →</button></div></div>
+      </section>
+
+      <section class="view" id="view-uploads">
+        <div class="section-intro"><p class="muted">Envoie directement les fichiers vers le stockage sécurisé R2. Les vidéos volumineuses sont découpées en morceaux pendant le transfert. Garde cette page ouverte jusqu’à la fin.</p></div>
+        <div class="upload-layout">
+          <section class="panel"><p class="eyebrow">NOUVEL ENVOI</p><h3>Ajouter un fichier média</h3>
+            <form id="uploadForm" class="stack">
+              <label>Type de fichier<select id="uploadKind"><option value="VIDEO">Vidéo complète</option><option value="TRAILER_VIDEO">Bande-annonce vidéo</option><option value="IMAGE">Affiche / image</option><option value="SUBTITLE">Sous-titres</option></select></label>
+              <label class="file-drop" for="mediaFile"><span class="file-icon">⇧</span><strong>Choisir un fichier</strong><small>Formats acceptés selon le type sélectionné</small><input id="mediaFile" type="file" required></label>
+              <div id="selectedFile" class="selected-file muted">Aucun fichier sélectionné</div>
+              <button class="btn primary full" type="submit">Envoyer vers R2</button>
+            </form>
+            <div id="uploadProgress" class="progress-wrap hidden"><div class="progress-head"><strong id="uploadStatus">Préparation…</strong><span id="uploadPercent">0%</span></div><div class="progress-track"><i id="uploadBar"></i></div></div>
+            <p class="notice subtle">Les fichiers vidéo peuvent atteindre 2 000 Mio. Une connexion stable est recommandée. Ne ferme pas cette page avant la fin de l’envoi.</p>
+          </section>
+          <section class="panel"><p class="eyebrow">APRÈS L’ENVOI</p><h3>Identifiant du média</h3><p class="muted">Une fois le fichier vérifié par l’API, son identifiant pourra être associé à une version vidéo, une affiche, une bande-annonce ou un sous-titre.</p><div id="uploadedMedia" class="media-id empty-state">Aucun fichier envoyé pour le moment.</div></section>
+        </div>
+      </section>
+
+      <section class="view" id="view-planning">
+        <div class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">CALENDRIER ÉDITORIAL</p><h3>Programmer une action</h3></div></div>
+          <form id="scheduleForm" class="form-grid">
+            <label>Type de cible<select id="scheduleTargetType"><option>CONTENT</option><option>SEASON</option><option>EPISODE</option><option>VIDEO_ASSET</option><option>POSTER</option><option>TRAILER</option></select></label>
+            <label>Identifiant de la cible<input id="scheduleTargetId" required placeholder="UUID du contenu ou média"></label>
+            <label>Action<select id="scheduleAction"><option>PUBLISH</option><option>UNPUBLISH</option><option>ARCHIVE</option></select></label>
+            <label>Date et heure<input id="scheduleDate" type="datetime-local" required></label>
+            <label class="span-two">Note interne<input id="scheduleNote" maxlength="1000" placeholder="Optionnel"></label>
+            <label class="check-label span-two"><input id="notifyFollowers" type="checkbox"> Notifier les abonnés lors de la publication</label>
+            <div class="span-two"><button class="btn primary" type="submit">Programmer l’action</button></div>
+          </form>
+        </div>
+        <div class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">FILE D’ATTENTE</p><h3>Actions programmées</h3></div><button class="btn secondary" id="loadSchedules">Actualiser</button></div><div id="scheduleList" class="simple-list"><div class="empty-state">Chargement…</div></div></div>
+      </section>
+
+      <section class="view" id="view-notifications">
+        <div class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">COMMUNICATION</p><h3>Nouvelle notification</h3><p class="muted">Les notifications sont envoyées dans la boîte de réception MovieHub.</p></div></div>
+          <form id="notificationForm" class="form-grid">
+            <label>Type<select id="notificationType"><option>ANNOUNCEMENT</option><option>MAINTENANCE</option><option>CATALOG_CHANGE</option><option>NEW_EPISODE</option><option>NEW_SEASON</option><option>NEW_LANGUAGE_VERSION</option><option>CONTENT_WITHDRAWAL</option><option>ACCOUNT</option><option>OPERATION_CONFIRMATION</option></select></label>
+            <label>Destinataires<select id="notificationAudience"><option value="ALL">Tous les utilisateurs</option><option value="FOLLOWERS">Abonnés d’un contenu</option><option value="USER">Un utilisateur</option></select></label>
+            <label id="notificationContentField" class="hidden">ID du contenu<input id="notificationContentId" placeholder="UUID du contenu"></label>
+            <label id="notificationUserField" class="hidden">ID utilisateur<input id="notificationUserId" placeholder="UUID utilisateur"></label>
+            <label class="span-two">Titre<input id="notificationTitle" maxlength="160" required placeholder="Titre de la notification"></label>
+            <label class="span-two">Message<textarea id="notificationBody" rows="4" maxlength="5000" required placeholder="Écris le message à envoyer…"></textarea></label>
+            <div class="span-two"><button class="btn primary" type="submit">Envoyer la notification</button></div>
+          </form>
+        </div>
+        <div class="notice warning">L’envoi est immédiat et crée une notification dans l’application. Vérifie soigneusement le texte et les destinataires avant de confirmer.</div>
+      </section>
+
+      <section class="view" id="view-withdrawals">
+        <div class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">GESTION DES DROITS</p><h3>Programmer un retrait de contenu</h3><p class="muted">Le retrait suit une période de préavis avant de rendre le contenu indisponible.</p></div></div>
+          <form id="withdrawalForm" class="form-grid">
+            <label class="span-two">ID du contenu<input id="withdrawContentId" required placeholder="UUID du contenu"></label>
+            <label>Début du préavis<input id="noticeStartsAt" type="datetime-local" required></label>
+            <label>Date effective du retrait<input id="effectiveAt" type="datetime-local" required></label>
+            <label class="span-two">Message destiné aux utilisateurs<textarea id="withdrawMessage" rows="3" maxlength="2000" placeholder="Optionnel"></textarea></label>
+            <div class="span-two"><button class="btn primary" type="submit">Programmer le retrait</button></div>
+          </form>
+        </div>
+        <div class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">SUIVI</p><h3>Retraits programmés</h3></div><button class="btn secondary" id="loadWithdrawals">Actualiser</button></div><div id="withdrawalList" class="simple-list"><div class="empty-state">Chargement…</div></div></div>
+      </section>
+
+      <footer class="footer"><span>MovieHub Administration</span><span>Les actions sensibles sont journalisées.</span></footer>
+    </main>
+  </div>
+
+  <dialog id="contentDialog" class="modal">
+    <div class="modal-head"><div><p class="eyebrow">NOUVELLE FICHE</p><h2>Ajouter au catalogue</h2></div><button class="icon-button" data-close-dialog aria-label="Fermer">×</button></div>
+    <form id="contentForm" class="form-grid">
+      <label>Type<select id="contentType"><option value="MOVIE">Film</option><option value="SERIES">Série</option><option value="ANIME">Animé</option></select></label>
+      <label>Titre<input id="contentTitle" maxlength="200" required placeholder="Titre du contenu"></label>
+      <label>Année<input id="contentYear" type="number" min="1888" max="2100" placeholder="2026"></label>
+      <label>Date de sortie<input id="contentReleaseDate" type="date"></label>
+      <label class="span-two">Description<textarea id="contentDescription" rows="4" maxlength="5000" placeholder="Synopsis…"></textarea></label>
+      <label class="span-two">Genres <small class="muted">(séparés par des virgules)</small><input id="contentGenres" placeholder="Action, Aventure, Drame"></label>
+      <label class="span-two">Titres alternatifs<input id="contentAltTitles" placeholder="Titre original, autre titre"></label>
+      <label>Langues audio<input id="contentAudio" placeholder="fr, en, ht"></label>
+      <label>Langues sous-titres<input id="contentSubs" placeholder="fr, en, es"></label>
+      <div class="span-two modal-actions"><button class="btn secondary" type="button" data-close-dialog>Annuler</button><button class="btn primary" type="submit">Créer la fiche</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="detailDialog" class="modal wide-modal">
+    <div class="modal-head"><div><p class="eyebrow">GESTION DU CONTENU</p><h2 id="detailTitle">Détails</h2></div><button class="icon-button" data-close-dialog aria-label="Fermer">×</button></div>
+    <div id="detailBody" class="detail-body"></div>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>

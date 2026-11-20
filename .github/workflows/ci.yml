@@ -52,6 +52,9 @@ jobs:
       - name: Tests unitaires
         run: npm test
 
+      - name: Vérifier la syntaxe du dashboard administrateur
+        run: node --check apps/admin/app.js
+
       - name: Typecheck (shared, config)
         run: npm run typecheck -w @movieshub/shared -w @movieshub/config
 

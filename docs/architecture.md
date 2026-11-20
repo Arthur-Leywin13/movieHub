@@ -12,7 +12,7 @@
 | Stockage | Cloudflare R2 (client SigV4 maison, sans SDK) | métadonnées en BDD, jamais de fichier en BDD ; signature validée contre les exemples officiels AWS |
 | Planification | prévu : pg-boss (file dans PostgreSQL) | pas de Redis ; indépendant du bot |
 | Android | prévu : Kotlin natif + Media3 | téléchargement en arrière-plan, partage Wi-Fi direct, sous-titres ASS |
-| Web/dashboard | prévu : Next.js | |
+| Web/dashboard | première version statique HTML/CSS/JS dans `apps/admin` ; migration vers Next.js possible si le produit l'exige | léger, sans dépendance de build, appels API protégés par Bearer |
 | Bot | prévu : grammY, client de l'API uniquement + serveur Bot API local (2 Go) | |
 
 Les lignes « prévu » ne sont pas encore implémentées.
