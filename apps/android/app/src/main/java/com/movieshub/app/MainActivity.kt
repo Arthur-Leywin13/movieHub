@@ -102,9 +102,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun extractIncomingVideo(source: Intent?): Uri? {
-        if (source?.action != Intent.ACTION_SEND) return null
+        if (source?.action != Intent.ACTION_SEND && source?.action != Intent.ACTION_VIEW) return null
         val mime = source.type ?: return null
         if (!mime.startsWith("video/") && mime != "application/octet-stream") return null
+        if (source.action == Intent.ACTION_VIEW) return source.data
         return if (android.os.Build.VERSION.SDK_INT >= 33) {
             source.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         } else {
@@ -1798,7 +1799,7 @@ private fun DownloadsScreen(
                         if (transferMode == "Partager")
                             "Utilise le bouton Partager d’une vidéo téléchargée. Android proposera Quick Share, Bluetooth ou les applications compatibles."
                         else
-                            "Sur l’autre appareil, ouvre Quick Share et sélectionne MovieHub comme application de réception. La vidéo sera copiée dans l’espace privé de MovieHub.",
+                            "Sur l’autre appareil, reçois la vidéo avec Quick Share, puis ouvre-la depuis les fichiers et choisis MovieHub. Elle sera copiée dans l’espace privé de l’application.",
                         color = UiColors.muted, fontSize = 12.sp
                     )
                     TextButton(onClick = { transferMode = null }) { MovieHubText("Fermer", color = UiColors.accent) }
