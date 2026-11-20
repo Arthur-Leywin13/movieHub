@@ -222,7 +222,7 @@ class PrivateDownloadWorker(
             }
             connection.disconnect()
 
-            if (link.sizeBytes > 0 && partial.length() != link.sizeBytes) error("Fichier incomplet : ${partial.length()} / ${link.sizeBytes} octets.")
+            if (activeLink.sizeBytes > 0 && partial.length() != activeLink.sizeBytes) error("Fichier incomplet : ${partial.length()} / ${activeLink.sizeBytes} octets.")
             if (output.exists()) output.delete()
             if (!partial.renameTo(output)) error("Impossible d’enregistrer le fichier dans l’espace privé.")
             finishOnServer(activeLink.id, "COMPLETED")
