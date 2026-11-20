@@ -200,7 +200,8 @@
       <div class="recent-row"><div class="recent-poster">✦</div><div class="recent-info"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(TYPE_LABELS[item.type] || item.type)} · ${escapeHtml(STATUS_LABELS[item.status] || item.status)}</small></div><button class="row-action" data-open-content="${escapeHtml(item.id)}">Ouvrir</button></div>`).join("") || '<div class="empty-state">Le catalogue est encore vide.</div>';
     try {
       const schedule = await api("/admin/scheduled-publications?page=1&limit=100");
-      $("#statScheduled").textContent = Number(schedule.total ?? (schedule.items || []).filter((job) => job.status === "PENDING").length);
+      const jobs = schedule.items || schedule.scheduledPublications || [];
+      $("#statScheduled").textContent = jobs.filter((job) => job.status === "PENDING").length;
     } catch { $("#statScheduled").textContent = "—"; }
   }
 
