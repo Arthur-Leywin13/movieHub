@@ -1295,7 +1295,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                "Le téléchargement sera disponible lorsque le service de téléchargement sera connecté à cette fiche.",
+                "Les versions publiées peuvent être téléchargées dans l’espace privé de MovieHub.",
                 color = UiColors.muted, fontSize = 11.sp, lineHeight = 16.sp
             )
             Spacer(Modifier.height(22.dp))
