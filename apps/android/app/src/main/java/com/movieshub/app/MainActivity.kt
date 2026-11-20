@@ -2,6 +2,8 @@ package com.movieshub.app
 
 import android.os.Bundle
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import android.view.ViewGroup
@@ -85,9 +87,32 @@ private object UiColors {
 }
 
 class MainActivity : ComponentActivity() {
+    private val incomingShareUri = mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MoviesHubApp() }
+        incomingShareUri.value = extractIncomingVideo(intent)
+        setContent { MoviesHubApp(incomingShareUri.value) { incomingShareUri.value = null } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingShareUri.value = extractIncomingVideo(intent)
+    }
+
+    private fun extractIncomingVideo(source: Intent?): Uri? {
+        val incoming = source ?: return null
+        if (incoming.action != Intent.ACTION_SEND && incoming.action != Intent.ACTION_VIEW) return null
+        val mime = incoming.type ?: return null
+        if (!mime.startsWith("video/") && mime != "application/octet-stream") return null
+        if (incoming.action == Intent.ACTION_VIEW) return incoming.data
+        return if (android.os.Build.VERSION.SDK_INT >= 33) {
+            incoming.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            incoming.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+        }
     }
 }
 
@@ -403,7 +428,7 @@ private object MoviesHubApi {
 }
 
 @Composable
-private fun MoviesHubApp() {
+private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> Unit) {
     var screen by remember { mutableStateOf(Screen.HOME) }
     val backStack = remember { mutableStateListOf<Screen>() }
     val navigate: (Screen) -> Unit = { destination ->
@@ -413,6 +438,21 @@ private fun MoviesHubApp() {
         screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.HOME
     }
     val context = LocalContext.current
+    var importedVideos by remember { mutableStateOf(listSharedVideos(context)) }
+    var transferNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(incomingShareUri) {
+        val uri = incomingShareUri
+        if (uri != null) {
+            runCatching { importSharedVideo(context, uri) }
+                .onSuccess {
+                    importedVideos = listSharedVideos(context)
+                    transferNotice = "Vidéo reçue : ${it.title}"
+                    screen = Screen.DOWNLOADS
+                }
+                .onFailure { transferNotice = it.message ?: "Réception impossible." }
+            onIncomingShareConsumed()
+        }
+    }
     var session by remember { mutableStateOf(SecureSessionStore.read(context)) }
     val preferences = remember { context.getSharedPreferences("moviehub_preferences", 0) }
     var themeMode by remember {
@@ -602,11 +642,19 @@ private fun MoviesHubApp() {
                             onBack = { goBack() }
                         )
                         Screen.DOWNLOADS -> DownloadsScreen(
+                            importedVideos = importedVideos,
+                            transferNotice = transferNotice,
+                            onNoticeConsumed = { transferNotice = null },
+                            onTransferError = { transferNotice = it },
                             onPlayOffline = { path, title ->
                                 offlinePlaybackPath = path
                                 offlinePlaybackTitle = title
                                 selected = null
                                 navigate(Screen.PLAYER)
+                            },
+                            onDeleteImported = { video ->
+                                video.file.delete()
+                                importedVideos = listSharedVideos(context)
                             }
                         )
                         Screen.PROFILE -> ProfileScreen(
@@ -1607,7 +1655,14 @@ private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: 
 }
 
 @Composable
-private fun DownloadsScreen(onPlayOffline: (String, String) -> Unit) {
+private fun DownloadsScreen(
+    importedVideos: List<SharedVideo>,
+    transferNotice: String?,
+    onNoticeConsumed: () -> Unit,
+    onTransferError: (String) -> Unit,
+    onPlayOffline: (String, String) -> Unit,
+    onDeleteImported: (SharedVideo) -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val workInfos by WorkManager.getInstance(context).getWorkInfosByTagLiveData(PrivateDownloadWorker.TAG).observeAsState(emptyList())
@@ -1624,7 +1679,15 @@ private fun DownloadsScreen(onPlayOffline: (String, String) -> Unit) {
             }
         }
         Spacer(Modifier.height(18.dp))
-        if (workInfos.isEmpty()) {
+        transferNotice?.let { notice ->
+            Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    MovieHubText(notice, color = UiColors.accent, modifier = Modifier.weight(1f), fontSize = 12.sp)
+                    IconButton(onClick = onNoticeConsumed) { Icon(Icons.Default.Close, "Fermer", tint = UiColors.muted) }
+                }
+            }
+        }
+        if (workInfos.isEmpty() && importedVideos.isEmpty()) {
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.DownloadForOffline, null, tint = UiColors.accent, modifier = Modifier.size(62.dp))
@@ -1636,6 +1699,29 @@ private fun DownloadsScreen(onPlayOffline: (String, String) -> Unit) {
             }
         } else {
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(importedVideos, key = { "shared-${it.file.absolutePath}" }) { video ->
+                    Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            MovieHubText(video.title, color = UiColors.text, fontWeight = FontWeight.Bold)
+                            MovieHubText("Reçu depuis un autre appareil • stocké en privé", color = UiColors.muted, fontSize = 11.sp)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { onPlayOffline(video.file.absolutePath, video.title) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                                ) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(5.dp)); MovieHubText("Lire") }
+                                OutlinedButton(
+                                    onClick = { runCatching { sharePrivateVideo(context, video.file, video.title) }.onFailure { onTransferError(it.message ?: "Partage impossible.") } },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                                ) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(5.dp)); MovieHubText("Partager") }
+                                IconButton(onClick = { onDeleteImported(video) }) {
+                                    Icon(Icons.Default.DeleteOutline, "Supprimer", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
                 items(workInfos, key = { it.id }) { info ->
                     val title = info.outputData.getString("title") ?: info.progress.getString("title") ?: "Téléchargement MovieHub"
                     val label = info.outputData.getString("versionLabel") ?: info.progress.getString("versionLabel") ?: "Vidéo"
@@ -1664,6 +1750,15 @@ private fun DownloadsScreen(onPlayOffline: (String, String) -> Unit) {
                                             Icon(Icons.Default.PlayArrow, null)
                                             Spacer(Modifier.width(5.dp))
                                             MovieHubText("Lire hors connexion")
+                                        }
+                                        OutlinedButton(
+                                            onClick = { savedFile?.let { file -> runCatching { sharePrivateVideo(context, file, title) }.onFailure { onTransferError(it.message ?: "Partage impossible.") } } },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                                        ) {
+                                            Icon(Icons.Default.Share, null)
+                                            Spacer(Modifier.width(5.dp))
+                                            MovieHubText("Partager")
                                         }
                                         OutlinedButton(
                                             onClick = {
@@ -1701,7 +1796,13 @@ private fun DownloadsScreen(onPlayOffline: (String, String) -> Unit) {
             Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     MovieHubText(if (transferMode == "Partager") "Envoyer un téléchargement" else "Recevoir un fichier", color = UiColors.text, fontWeight = FontWeight.Bold)
-                    MovieHubText("Le transfert local sécurisé sera lancé depuis cette section. L’interface est prête, le moteur de transfert reste à connecter.", color = UiColors.muted, fontSize = 12.sp)
+                    MovieHubText(
+                        if (transferMode == "Partager")
+                            "Utilise le bouton Partager d’une vidéo téléchargée. Android proposera Quick Share, Bluetooth ou les applications compatibles."
+                        else
+                            "Sur l’autre appareil, reçois la vidéo avec Quick Share, puis ouvre-la depuis les fichiers et choisis MovieHub. Elle sera copiée dans l’espace privé de l’application.",
+                        color = UiColors.muted, fontSize = 12.sp
+                    )
                     TextButton(onClick = { transferMode = null }) { MovieHubText("Fermer", color = UiColors.accent) }
                 }
             }
