@@ -563,7 +563,11 @@ private fun MoviesHubApp() {
                             selected, detailLoading,
                             isFavorite = selected?.id in favoriteIds,
                             onBack = { goBack() },
-                            onPlay = { navigate(Screen.PLAYER) },
+                            onPlay = {
+                                offlinePlaybackPath = null
+                                offlinePlaybackTitle = null
+                                navigate(Screen.PLAYER)
+                            },
                             onDownload = { version ->
                                 if (session == null) navigate(Screen.AUTH)
                                 else enqueuePrivateDownload(context, selected, version)
