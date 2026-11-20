@@ -1382,7 +1382,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
                 Icon(Icons.Default.PlayArrow, null)
                 Spacer(Modifier.width(7.dp))
                 MovieHubText(
-                    if (!item?.versions.isNullOrEmpty()) "Regarder le film"
+                    if (!item?.versions.isNullOrEmpty()) "Regarder en ligne"
                     else if (item?.trailerUrl.isNullOrBlank()) "Lecture indisponible"
                     else "Voir la bande-annonce",
                     fontWeight = FontWeight.Bold
@@ -1390,7 +1390,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             }
             if (!item?.versions.isNullOrEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                MovieHubText("TÉLÉCHARGER HORS CONNEXION", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                MovieHubText("TÉLÉCHARGER POUR REGARDER HORS CONNEXION", color = UiColors.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                 item?.versions.orEmpty().forEach { version ->
                     OutlinedButton(
                         onClick = { onDownload(version) },
@@ -1416,7 +1416,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             }
             Spacer(Modifier.height(10.dp))
             MovieHubText(
-                "Les versions publiées peuvent être téléchargées dans l’espace privé de MovieHub.",
+                "Le streaming démarre sans téléchargement. Le téléchargement est facultatif et sert uniquement à regarder hors connexion.",
                 color = UiColors.muted, fontSize = 11.sp, lineHeight = 16.sp
             )
             Spacer(Modifier.height(22.dp))
@@ -1472,7 +1472,35 @@ private fun PlayerScreen(
         if (offlineFilePath != null) {
             videoUrl = File(offlineFilePath).takeIf { it.isFile && it.canRead() }?.toURI()?.toString()
                 ?: run { playbackError = "Fichier hors connexion introuvable."; null }
-        } else if (versions.isEmpty()) videoUrl = item?.trailerUrl
+        } else if (versions.isEmpty()) {
+            videoUrl = item?.trailerUrl
+        } else {
+            videoUrl = null
+        }
+    }
+
+    // La lecture en ligne obtient directement une URL R2 temporaire.
+    // Elle n'appelle jamais la route de téléchargement et ne crée aucun fichier local.
+    LaunchedEffect(item?.id, selectedVersion?.id, activeSession?.user?.id, offlineFilePath) {
+        val chosen = selectedVersion
+        val current = activeSession
+        if (offlineFilePath == null && chosen != null && current != null) {
+            loading = true
+            playbackError = null
+            runCatching { MoviesHubApi.startPlayback(chosen.id, current) }
+                .onSuccess { (updated, raw) ->
+                    activeSession = updated
+                    onSessionUpdate(updated)
+                    val signedUrl = runCatching { JSONObject(raw).optString("url") }.getOrNull()
+                    if (!signedUrl.isNullOrBlank() && signedUrl.startsWith("https://")) {
+                        videoUrl = signedUrl
+                    } else {
+                        playbackError = "L’API n’a pas renvoyé de lien de streaming valide."
+                    }
+                }
+                .onFailure { playbackError = it.message ?: "Impossible de lancer le streaming." }
+            loading = false
+        }
     }
 
     suspend fun saveProgress(positionSeconds: Int, durationSeconds: Int, version: VideoVersion) {
@@ -1499,7 +1527,7 @@ private fun PlayerScreen(
         if (offlineFilePath != null) {
             MovieHubText("Lecture hors connexion", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
         } else if (versions.isNotEmpty()) {
-            MovieHubText("Qualité vidéo", color = UiColors.text, fontWeight = FontWeight.SemiBold)
+            MovieHubText("Streaming en ligne • choisis ta qualité", color = UiColors.text, fontWeight = FontWeight.SemiBold)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 versions.forEach { version ->
                     FilterChip(
