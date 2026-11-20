@@ -102,15 +102,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun extractIncomingVideo(source: Intent?): Uri? {
-        if (source?.action != Intent.ACTION_SEND && source?.action != Intent.ACTION_VIEW) return null
-        val mime = source.type ?: return null
+        val incoming = source ?: return null
+        if (incoming.action != Intent.ACTION_SEND && incoming.action != Intent.ACTION_VIEW) return null
+        val mime = incoming.type ?: return null
         if (!mime.startsWith("video/") && mime != "application/octet-stream") return null
-        if (source.action == Intent.ACTION_VIEW) return source.data
+        if (incoming.action == Intent.ACTION_VIEW) return incoming.data
         return if (android.os.Build.VERSION.SDK_INT >= 33) {
-            source.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            incoming.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         } else {
             @Suppress("DEPRECATION")
-            source.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+            incoming.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
         }
     }
 }
