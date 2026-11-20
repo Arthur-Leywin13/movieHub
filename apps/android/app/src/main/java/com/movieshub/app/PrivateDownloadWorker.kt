@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -144,7 +145,7 @@ class PrivateDownloadWorker(
 
         return try {
             setForeground(notification(0))
-            val token = activeAccessToken()
+            activeAccessToken()
             var link: DownloadLink? = null
 
             if (metadata.exists()) {
@@ -167,13 +168,14 @@ class PrivateDownloadWorker(
                     started.optLong("sizeBytes")
                 )
             }
-            downloadId = link.id
-            metadata.writeText(JSONObject().put("downloadId", link.id).put("filename", link.filename).toString())
+            val activeLink = link ?: error("Lien de téléchargement indisponible.")
+            downloadId = activeLink.id
+            metadata.writeText(JSONObject().put("downloadId", activeLink.id).put("filename", activeLink.filename).toString())
 
-            val safeName = link.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._ -]"), "_").take(150)
+            val safeName = activeLink.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._ -]"), "_").take(150)
             val output = File(dir, safeName.ifBlank { "$versionId.video" })
             val offset = if (partial.exists()) partial.length() else 0L
-            var connection = (URL(link.url).openConnection() as HttpURLConnection).apply {
+            var connection = (URL(activeLink.url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 20_000
                 readTimeout = 60_000
                 if (offset > 0L) setRequestProperty("Range", "bytes=$offset-")
@@ -181,7 +183,7 @@ class PrivateDownloadWorker(
             var code = connection.responseCode
             if (code == 401 || code == 403) {
                 connection.disconnect()
-                val refreshed = apiWithAuth("POST", "/downloads/${link.id}/refresh-url")
+                val refreshed = apiWithAuth("POST", "/downloads/${activeLink.id}/refresh-url")
                 connection = (URL(refreshed.getString("url")).openConnection() as HttpURLConnection).apply {
                     connectTimeout = 20_000
                     readTimeout = 60_000
@@ -197,10 +199,9 @@ class PrivateDownloadWorker(
             val append = offset > 0L && code == 206
             if (offset > 0L && code == 200) partial.delete()
             val startingBytes = if (append) offset else 0L
-            val totalBytes = link.sizeBytes.takeIf { it > 0L } ?: connection.getHeaderFieldLong("Content-Length", -1L).let { if (it > 0) it + startingBytes else -1L }
+            val totalBytes = activeLink.sizeBytes.takeIf { it > 0L } ?: connection.getHeaderFieldLong("Content-Length", -1L).let { if (it > 0) it + startingBytes else -1L }
             connection.inputStream.use { input ->
-                partial.outputStream().let { raw ->
-                    (if (append) partial.appendOutputStream() else raw).use { outputStream ->
+                FileOutputStream(partial, append).use { outputStream ->
                         val buffer = ByteArray(256 * 1024)
                         var downloaded = startingBytes
                         var lastPercent = -1
@@ -218,14 +219,13 @@ class PrivateDownloadWorker(
                             }
                         }
                     }
-                }
             }
             connection.disconnect()
 
             if (link.sizeBytes > 0 && partial.length() != link.sizeBytes) error("Fichier incomplet : ${partial.length()} / ${link.sizeBytes} octets.")
             if (output.exists()) output.delete()
             if (!partial.renameTo(output)) error("Impossible d’enregistrer le fichier dans l’espace privé.")
-            finishOnServer(link.id, "COMPLETED")
+            finishOnServer(activeLink.id, "COMPLETED")
             metadata.delete()
             Result.success(Data.Builder().putString("title", title).putString("versionLabel", label).putString("filePath", output.absolutePath).putLong("sizeBytes", output.length()).build())
         } catch (cancelled: CancellationException) {
