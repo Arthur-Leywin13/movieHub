@@ -445,6 +445,7 @@ private fun MoviesHubApp() {
     var accountLoading by remember { mutableStateOf(false) }
     var accountError by remember { mutableStateOf<String?>(null) }
     var historyIds by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var historyProgress by remember { mutableStateOf<Map<String, Pair<Int, Int>>>(emptyMap()) }
     var favoriteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(Unit) {
@@ -641,6 +642,7 @@ private fun MoviesHubApp() {
                                                 val parsed = MoviesHubApi.parseHistory(raw)
                                                 accountItems = parsed.map { it.content }
                                                 historyIds = parsed.associate { it.content.id to it.id }
+                                                historyProgress = parsed.associate { it.content.id to (it.positionSeconds to (it.durationSeconds ?: 0)) }
                                                 accountError = null
                                             }
                                             .onFailure { accountError = it.message ?: "Historique indisponible" }
@@ -675,6 +677,7 @@ private fun MoviesHubApp() {
                         )
                         Screen.HISTORY -> AccountListScreen(
                             title = "Historique", items = accountItems, loading = accountLoading, error = accountError,
+                            historyProgress = historyProgress,
                             onBack = { goBack() }, onSelect = { selected = it; navigate(Screen.DETAIL) },
                             onRemove = { item ->
                                 val historyId = historyIds[item.id]
@@ -684,6 +687,7 @@ private fun MoviesHubApp() {
                                         .onSuccess { updated ->
                                             session = updated; SecureSessionStore.save(context, updated)
                                             accountItems = accountItems.filterNot { it.id == item.id }
+                                            historyProgress = historyProgress - item.id
                                         }
                                         .onFailure { accountError = it.message ?: "Suppression impossible" }
                                 }
@@ -1792,6 +1796,15 @@ private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavo
     }
 }
 
+private fun formatPlaybackTime(seconds: Int): String {
+    val total = seconds.coerceAtLeast(0)
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    val remainingSeconds = total % 60
+    return if (hours > 0) "${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}"
+    else "${minutes}:${remainingSeconds.toString().padStart(2, '0')}"
+}
+
 @Composable
 private fun AccountListScreen(
     title: String,
@@ -1800,7 +1813,8 @@ private fun AccountListScreen(
     error: String?,
     onBack: () -> Unit,
     onSelect: (MediaItem) -> Unit,
-    onRemove: (MediaItem) -> Unit
+    onRemove: (MediaItem) -> Unit,
+    historyProgress: Map<String, Pair<Int, Int>> = emptyMap()
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1813,7 +1827,18 @@ private fun AccountListScreen(
         LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
             items(items, key = { it.id }) { item ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { MediaPoster(item) { onSelect(item) } }
+                    Column(Modifier.weight(1f)) {
+                        MediaPoster(item) { onSelect(item) }
+                        val progress = historyProgress[item.id]
+                        if (progress != null && progress.second > 0 && progress.first > 0) {
+                            val ratio = (progress.first.toFloat() / progress.second.toFloat()).coerceIn(0f, 1f)
+                            LinearProgressIndicator(progress = { ratio }, color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                            MovieHubText(
+                                "Reprise : ${formatPlaybackTime(progress.first)} / ${formatPlaybackTime(progress.second)}",
+                                color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp)
+                            )
+                        }
+                    }
                     IconButton(onClick = { onRemove(item) }) {
                         Icon(Icons.Default.DeleteOutline, "Retirer", tint = UiColors.accent)
                     }
