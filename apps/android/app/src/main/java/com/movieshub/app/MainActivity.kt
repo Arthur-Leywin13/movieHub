@@ -643,6 +643,7 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                             importedVideos = importedVideos,
                             transferNotice = transferNotice,
                             onNoticeConsumed = { transferNotice = null },
+                            onTransferError = { transferNotice = it },
                             onPlayOffline = { path, title ->
                                 offlinePlaybackPath = path
                                 offlinePlaybackTitle = title
@@ -1656,6 +1657,7 @@ private fun DownloadsScreen(
     importedVideos: List<SharedVideo>,
     transferNotice: String?,
     onNoticeConsumed: () -> Unit,
+    onTransferError: (String) -> Unit,
     onPlayOffline: (String, String) -> Unit,
     onDeleteImported: (SharedVideo) -> Unit
 ) {
@@ -1707,7 +1709,7 @@ private fun DownloadsScreen(
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
                                 ) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(5.dp)); MovieHubText("Lire") }
                                 OutlinedButton(
-                                    onClick = { runCatching { sharePrivateVideo(context, video.file, video.title) }.onFailure { transferNotice = it.message } },
+                                    onClick = { runCatching { sharePrivateVideo(context, video.file, video.title) }.onFailure { onTransferError(it.message ?: "Partage impossible.") } },
                                     modifier = Modifier.weight(1f),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
                                 ) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(5.dp)); MovieHubText("Partager") }
@@ -1748,7 +1750,7 @@ private fun DownloadsScreen(
                                             MovieHubText("Lire hors connexion")
                                         }
                                         OutlinedButton(
-                                            onClick = { savedFile?.let { file -> runCatching { sharePrivateVideo(context, file, title) }.onFailure { transferNotice = it.message } } },
+                                            onClick = { savedFile?.let { file -> runCatching { sharePrivateVideo(context, file, title) }.onFailure { onTransferError(it.message ?: "Partage impossible.") } } },
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
                                         ) {
