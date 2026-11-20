@@ -1382,8 +1382,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
                 Icon(Icons.Default.PlayArrow, null)
                 Spacer(Modifier.width(7.dp))
                 MovieHubText(
-                    if (!item?.versions.isNullOrEmpty()) "Regarder en ligne"
-                    else if (item?.trailerUrl.isNullOrBlank()) "Lecture indisponible"
+                            else if (item?.trailerUrl.isNullOrBlank()) "Lecture indisponible"
                     else "Voir la bande-annonce",
                     fontWeight = FontWeight.Bold
                 )
