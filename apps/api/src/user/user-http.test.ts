@@ -180,6 +180,7 @@ test('réglages et recherches récentes', async () => {
 
 test('téléchargement : lien signé 15 min avec nom de fichier, compteur, état puis terminé ; refus hors publication', async () => {
   const film = await publishMovie('Telechargeable', '2026-03-01');
+  assert.equal((await call('POST', `/versions/${film.versionId}/play`, { token: u1.token })).status, 404, 'la lecture en ligne est désactivée');
   const r = await call('POST', `/versions/${film.versionId}/download`, { token: u1.token, headers: { 'x-app-version': '1.4.2' } });
   assert.equal(r.status, 200);
   assert.match(r.json['url'], /^https:\/\/fake\.r2\/get\/video\/2026\/11\/.+\.mkv\?exp=900&dl=Telechargeable%20%5Bfr%5D\.mkv/);
