@@ -218,15 +218,15 @@
     const seasons = (data.seasons || []).map((entry) => {
       const season = entry.season;
       const episodes = entry.episodes || [];
-      return `<div class="detail-section"><div class="panel-heading"><div><p class="eyebrow">SAISON ${escapeHtml(season.number)}</p><h3>${escapeHtml(season.title || "Saison " + season.number)}</h3></div><span class="status-tag ${String(season.status).toLowerCase()}">${escapeHtml(STATUS_LABELS[season.status] || season.status)}</span></div>
+      return `<div class="detail-section"><div class="panel-heading"><div><p class="eyebrow">SAISON ${escapeHtml(season.number)}</p><h3>${escapeHtml(season.title || "Saison " + season.number)}</h3></div><div><span class="status-tag ${String(season.status).toLowerCase()}">${escapeHtml(STATUS_LABELS[season.status] || season.status)}</span><div class="detail-actions">${(TRANSITIONS[season.status] || []).map((status) => `<button class="row-action" data-set-season-status="${status}" data-season-id="${escapeHtml(season.id)}">${escapeHtml(STATUS_LABELS[status] || status)}</button>`).join("")}</div></div></div>
         <div class="simple-list">${episodes.map((entry) => `<div class="episode-card"><div class="simple-row"><div><strong>${escapeHtml(entry.episode.title || "Épisode " + entry.episode.number)}</strong><small>${escapeHtml(STATUS_LABELS[entry.episode.status] || entry.episode.status)} · ${(entry.versions || []).length} version(s) · ${escapeHtml(entry.episode.id)}</small><div class="detail-actions">${(TRANSITIONS[entry.episode.status] || []).map((status) => `<button class="row-action" data-set-episode-status="${status}" data-episode-id="${escapeHtml(entry.episode.id)}">${escapeHtml(STATUS_LABELS[status] || status)}</button>`).join("")}</div></div><span class="muted">#${escapeHtml(entry.episode.number)}</span></div><div class="simple-list">${(entry.versions || []).map(renderVersion).join("")}</div><form class="detail-form episode-version-form" data-episode-id="${escapeHtml(entry.episode.id)}"><div class="form-grid"><label class="span-two">ID du fichier vidéo<input name="mediaFileId" required placeholder="ID du média envoyé"></label><label>Libellé<input name="label" placeholder="720p"></label><label>Hauteur<input name="height" type="number" min="1" max="20000"></label><label>Largeur<input name="width" type="number" min="1" max="20000"></label><label>Durée (secondes)<input name="durationSeconds" type="number" min="1" max="86400"></label><label class="span-two">Langues audio<input name="audioLanguages" required placeholder="fr, en"></label></div><button class="btn secondary" type="submit">＋ Ajouter une version à cet épisode</button></form></div>`).join("") || '<div class="empty-state">Aucun épisode dans cette saison.</div>'}</div>
         <form class="detail-form episode-form" data-season-id="${escapeHtml(season.id)}"><div class="form-grid"><label>Numéro d’épisode<input name="number" type="number" min="1" max="9999" required></label><label>Titre<input name="title" maxlength="200" placeholder="Titre de l’épisode"></label><label class="span-two">Description<textarea name="description" rows="2"></textarea></label><label class="span-two">Note de sortie<input name="releaseNote" maxlength="2000"></label></div><button class="btn secondary" type="submit">＋ Ajouter un épisode</button></form>
       </div>`;
     }).join("");
     const renderVersion = (v) => `<div class="simple-row"><div><strong>${escapeHtml(v.label || (v.height ? v.height + "p" : "Version vidéo"))}</strong><small>${escapeHtml((v.audioTracks || []).map((x) => x.languageCode).join(", ") || "Pistes audio non précisées")} · ${escapeHtml(STATUS_LABELS[v.status] || v.status)} · ${escapeHtml(v.id)}</small><div class="detail-actions">${(TRANSITIONS[v.status] || []).map((status) => `<button class="row-action" data-set-version-status="${status}" data-version-id="${escapeHtml(v.id)}">${escapeHtml(STATUS_LABELS[status] || status)}</button>`).join("")}</div></div></div>`;
     const versions = (data.versions || []).map(renderVersion).join("");
-    const posters = (data.posters || []).map((p) => `<div class="simple-row"><div><strong>${escapeHtml(p.kind || "Affiche")} ${p.isPrimary ? "· Principale" : ""}</strong><small>${escapeHtml(p.id)} · ${p.archivedAt ? "Archivée" : "Active"}</small></div></div>`).join("");
-    const trailers = (data.trailers || []).map((t) => `<div class="simple-row"><div><strong>${escapeHtml(t.title || "Bande-annonce")} ${t.isPrimary ? "· Principale" : ""}</strong><small>${escapeHtml(t.id)} · ${t.externalUrl ? "Lien externe" : "Fichier média"}</small></div></div>`).join("");
+    const posters = (data.posters || []).map((p) => `<div class="simple-row"><div><strong>${escapeHtml(p.kind || "Affiche")} ${content.primaryPosterId === p.id ? "· Principale" : ""}</strong><small>${escapeHtml(p.id)} · ${p.archivedAt ? "Archivée" : "Active"}</small><div class="detail-actions">${p.archivedAt ? `<button class="row-action" data-restore-poster="${escapeHtml(p.id)}">Restaurer</button>` : `${content.primaryPosterId !== p.id ? `<button class="row-action" data-primary-poster="${escapeHtml(p.id)}">Définir principale</button>` : ""}<button class="row-action" data-archive-poster="${escapeHtml(p.id)}">Archiver</button>`}</div></div></div>`).join("");
+    const trailers = (data.trailers || []).map((t) => `<div class="simple-row"><div><strong>${escapeHtml(t.title || "Bande-annonce")} ${content.primaryTrailerId === t.id ? "· Principale" : ""}</strong><small>${escapeHtml(t.id)} · ${t.externalUrl ? "Lien externe" : "Fichier média"} · ${t.archivedAt ? "Archivée" : "Active"}</small><div class="detail-actions">${t.archivedAt ? `<button class="row-action" data-restore-trailer="${escapeHtml(t.id)}">Restaurer</button>` : `${content.primaryTrailerId !== t.id ? `<button class="row-action" data-primary-trailer="${escapeHtml(t.id)}">Définir principale</button>` : ""}<button class="row-action" data-archive-trailer="${escapeHtml(t.id)}">Archiver</button>`}</div></div></div>`).join("");
     $("#detailBody").innerHTML = `
       <div class="detail-summary"><div><h3>${escapeHtml(content.title)}</h3><small class="muted">${escapeHtml(TYPE_LABELS[content.type] || content.type)} · ${escapeHtml(content.year || "Année inconnue")} · ${escapeHtml(content.slug || "")}</small></div><span class="status-tag ${String(content.status).toLowerCase()}">${escapeHtml(STATUS_LABELS[content.status] || content.status)}</span></div>
       <div class="detail-section"><h3>Informations de la fiche</h3><div class="detail-fields"><div class="detail-field">Année<strong>${escapeHtml(content.year || "—")}</strong></div><div class="detail-field">Date de sortie<strong>${escapeHtml(content.releaseDate || "—")}</strong></div><div class="detail-field">Genres<strong>${escapeHtml((content.genres || []).map((g) => g.name || g).join(", ") || "—")}</strong></div><div class="detail-field">Langues audio<strong>${escapeHtml((content.audioLanguages || []).join(", ") || "—")}</strong></div><div class="detail-field">Sous-titres<strong>${escapeHtml((content.subtitleLanguages || []).join(", ") || "—")}</strong></div></div><p class="muted" style="font-size:11px;line-height:1.6;margin:14px 0 0">${escapeHtml(content.description || "Aucune description.")}</p></div>
@@ -362,6 +362,21 @@
     if (!confirm("Confirmer le statut de cet épisode : " + (STATUS_LABELS[status] || status) + " ?")) return;
     await api("/admin/episodes/" + id + "/status", { method: "POST", body: { status } });
     toast("Statut de l’épisode mis à jour.");
+    await openContent(state.currentContent.content.id);
+  }
+
+  async function setSeasonStatus(id, status) {
+    if (!confirm("Confirmer le statut de cette saison : " + (STATUS_LABELS[status] || status) + " ?")) return;
+    await api("/admin/seasons/" + id + "/status", { method: "POST", body: { status } });
+    toast("Statut de la saison mis à jour.");
+    await openContent(state.currentContent.content.id);
+  }
+
+  async function mediaAction(kind, id, action) {
+    if (action === "archive" && !confirm("Archiver ce média ? Il ne sera plus proposé comme média actif.")) return;
+    const route = kind === "poster" ? "/admin/posters/" : "/admin/trailers/";
+    await api(route + id + "/" + action, { method: "POST", body: {} });
+    toast(action === "primary" ? "Média principal mis à jour." : action === "restore" ? "Média restauré." : "Média archivé.");
     await openContent(state.currentContent.content.id);
   }
 
@@ -544,7 +559,7 @@
     });
     $$(".nav-item").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
     document.addEventListener("click", (event) => {
-      const target = event.target.closest("[data-view],[data-action],[data-close-dialog],[data-open-content],[data-set-status],[data-set-version-status],[data-set-episode-status],[data-cancel-schedule],[data-cancel-withdrawal]");
+      const target = event.target.closest("[data-view],[data-action],[data-close-dialog],[data-open-content],[data-set-status],[data-set-version-status],[data-set-episode-status],[data-set-season-status],[data-primary-poster],[data-archive-poster],[data-restore-poster],[data-primary-trailer],[data-archive-trailer],[data-restore-trailer],[data-cancel-schedule],[data-cancel-withdrawal]");
       if (!target) return;
       if (target.dataset.view) navigate(target.dataset.view);
       if (target.dataset.action === "new-content") $("#contentDialog").showModal();
@@ -553,6 +568,13 @@
       if (target.dataset.setStatus) setContentStatus(target.dataset.statusId, target.dataset.setStatus).catch((error) => toast(error.message, true));
       if (target.dataset.setVersionStatus) setVersionStatus(target.dataset.versionId, target.dataset.setVersionStatus).catch((error) => toast(error.message, true));
       if (target.dataset.setEpisodeStatus) setEpisodeStatus(target.dataset.episodeId, target.dataset.setEpisodeStatus).catch((error) => toast(error.message, true));
+      if (target.dataset.setSeasonStatus) setSeasonStatus(target.dataset.seasonId, target.dataset.setSeasonStatus).catch((error) => toast(error.message, true));
+      if (target.dataset.primaryPoster) mediaAction("poster", target.dataset.primaryPoster, "primary").catch((error) => toast(error.message, true));
+      if (target.dataset.archivePoster) mediaAction("poster", target.dataset.archivePoster, "archive").catch((error) => toast(error.message, true));
+      if (target.dataset.restorePoster) mediaAction("poster", target.dataset.restorePoster, "restore").catch((error) => toast(error.message, true));
+      if (target.dataset.primaryTrailer) mediaAction("trailer", target.dataset.primaryTrailer, "primary").catch((error) => toast(error.message, true));
+      if (target.dataset.archiveTrailer) mediaAction("trailer", target.dataset.archiveTrailer, "archive").catch((error) => toast(error.message, true));
+      if (target.dataset.restoreTrailer) mediaAction("trailer", target.dataset.restoreTrailer, "restore").catch((error) => toast(error.message, true));
       if (target.dataset.cancelSchedule) {
         if (confirm("Annuler cette action programmée ?")) api("/admin/scheduled-publications/" + target.dataset.cancelSchedule, { method: "DELETE" }).then(loadSchedules).then(() => toast("Programmation annulée.")).catch((error) => toast(error.message, true));
       }
