@@ -1569,7 +1569,12 @@ private fun DownloadsScreen() {
                                 WorkInfo.State.SUCCEEDED -> Text("Téléchargement terminé • enregistré en privé", color = UiColors.accent, fontSize = 12.sp)
                                 WorkInfo.State.CANCELLED -> {
                                     Text("En pause • fichier partiel conservé en privé", color = UiColors.muted, fontSize = 12.sp)
-                                    TextButton(onClick = { enqueuePrivateDownload(context, null, VideoVersion(info.inputData.getString("versionId") ?: return@TextButton, label, null, null), title) }) { Text("Reprendre", color = UiColors.accent) }
+                                    val versionId = info.inputData.getString("versionId")
+                                    if (versionId != null) {
+                                        TextButton(onClick = { enqueuePrivateDownload(context, null, VideoVersion(versionId, label, null, null), title) }) {
+                                            Text("Reprendre", color = UiColors.accent)
+                                        }
+                                    }
                                 }
                                 WorkInfo.State.FAILED -> Text(info.outputData.getString("error") ?: "Échec du téléchargement", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                             }
