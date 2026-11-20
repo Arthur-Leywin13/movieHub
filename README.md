@@ -2,12 +2,12 @@
 
 Plateforme de films, séries et animés : application Android, web, API commune, bot Telegram d'administration, dashboard, PostgreSQL et Cloudflare R2.
 
-**État : fondation + API d'authentification et d'envoi de fichiers.** Monorepo, schéma de base de données (dont jetons, pubs et codes promo), configuration, règles métier des jetons, erreurs partagées, et l'API (inscription/connexion/sessions, rôles admin, envoi de fichiers jusqu'à 2 Go vers R2, catalogue : contenus, saisons, épisodes, versions linguistiques, affiches, bandes-annonces, lecture publique). et le bot Telegram d'administration (ajout film/série/animé, personnalisation, envoi de fichiers jusqu'à 2 Go avec reprise). l'API côté utilisateur (recherche, téléchargements signés, favoris, suivi, historique, accueil, tendances). Retrait/programmation, notifications, jetons/pubs, paiements, dashboard et applications restent à faire. Voir `docs/architecture.md` pour les décisions et les points ouverts.
+**État : fondation, API et première version du dashboard web d’administration.** Monorepo, schéma PostgreSQL/Prisma, API (authentification, rôles admin, catalogue, médias R2, lecture, téléchargements, favoris, historique, programmation, retraits et notifications), bot Telegram d’administration et dashboard web. L’application Android est développée séparément. Les modules publicitaires, paiements, push FCM, gestion avancée des administrateurs et audit consultable restent à terminer. Voir `docs/architecture.md` pour les décisions et les points ouverts.
 
 ## Structure
 
 ```
-apps/        api (auth, envois R2, catalogue), bot (Telegram), web, admin (placeholders), android (Kotlin, hors npm)
+apps/        api (auth, envois R2, catalogue), bot (Telegram), admin (dashboard web statique), android (Kotlin, hors npm)
 packages/
   database/  schéma Prisma, SQL de recherche/contraintes, seed, contrôle de schéma
   shared/    erreurs applicatives, slugs
