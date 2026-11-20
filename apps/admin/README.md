@@ -28,8 +28,8 @@ Toutes les autorisations et transitions de statut sont vérifiées par l’API. 
    python -m http.server 4173 --directory apps/admin
    ```
 
-3. Ouvrir `http://localhost:4173`.
-4. Dans le formulaire, indiquer l’URL de l’API (par défaut `http://localhost:3000`) et se connecter avec le compte administrateur.
+4. Ouvrir `http://localhost:4173`.
+5. Dans le formulaire, indiquer l’URL de l’API (par défaut `http://localhost:3000`) et se connecter avec le compte administrateur.
 
 Le serveur Python ne fait que servir les fichiers statiques. Il ne stocke aucun jeton et ne relaie aucune requête API.
 
