@@ -186,7 +186,20 @@ private val translations = mapOf(
     "Fichier hors connexion introuvable." to listOf("Offline file not found.", "No se encontró el archivo sin conexión.", "Nou pa jwenn fichye san entènèt la."),
     "Lire hors connexion" to listOf("Play offline", "Reproducir sin conexión", "Jwe san entènèt"),
     "Supprimer" to listOf("Delete", "Eliminar", "Efase"),
-    "Cette vidéo est lue depuis le stockage privé de cet appareil." to listOf("This video is playing from this device's private storage.", "Este video se reproduce desde el almacenamiento privado de este dispositivo.", "Videyo sa a ap jwe nan espas prive aparèy sa a.")
+    "Cette vidéo est lue depuis le stockage privé de cet appareil." to listOf("This video is playing from this device's private storage.", "Este video se reproduce desde el almacenamiento privado de este dispositivo.", "Videyo sa a ap jwe nan espas prive aparèy sa a."),
+    "Partager" to listOf("Share", "Compartir", "Pataje"),
+    "Recevoir" to listOf("Receive", "Recibir", "Resevwa"),
+    "Envoyer un téléchargement" to listOf("Send a download", "Enviar una descarga", "Voye yon telechajman"),
+    "Recevoir un fichier" to listOf("Receive a file", "Recibir un archivo", "Resevwa yon fichye"),
+    "Utilise le bouton Partager d’une vidéo téléchargée. Android proposera Quick Share, Bluetooth ou les applications compatibles." to listOf("Use the Share button on a downloaded video. Android will offer Quick Share, Bluetooth, or compatible apps.", "Usa el botón Compartir de un video descargado. Android ofrecerá Quick Share, Bluetooth o aplicaciones compatibles.", "Sèvi ak bouton Pataje sou yon videyo telechaje. Android ap ofri Quick Share, Bluetooth oswa aplikasyon ki konpatib."),
+    "Sur l’autre appareil, ouvre Quick Share et sélectionne MovieHub comme application de réception. La vidéo sera copiée dans l’espace privé de MovieHub." to listOf("On the other device, open Quick Share and choose MovieHub as the receiving app. The video will be copied into MovieHub's private storage.", "En el otro dispositivo, abre Quick Share y elige MovieHub como aplicación receptora. El video se copiará al almacenamiento privado de MovieHub.", "Sou lòt aparèy la, ouvri Quick Share epi chwazi MovieHub kòm aplikasyon k ap resevwa a. Videyo a ap kopye nan espas prive MovieHub."),
+    "Vidéo reçue depuis un autre appareil • stocké en privé" to listOf("Video received from another device • stored privately", "Video recibido de otro dispositivo • almacenado en privado", "Videyo resevwa nan yon lòt aparèy • konsève an prive"),
+    "Reçu depuis un autre appareil • stocké en privé" to listOf("Received from another device • stored privately", "Recibido de otro dispositivo • almacenado en privado", "Resevwa nan yon lòt aparèy • konsève an prive"),
+    "Réception impossible." to listOf("Could not receive the video.", "No se pudo recibir el video.", "Nou pa t kapab resevwa videyo a."),
+    "Seules les vidéos peuvent être reçues." to listOf("Only videos can be received.", "Solo se pueden recibir videos.", "Se videyo sèlman ki ka resevwa."),
+    "Impossible d’ouvrir le fichier reçu." to listOf("Unable to open the received file.", "No se pudo abrir el archivo recibido.", "Nou pa kapab ouvri fichye a resevwa a."),
+    "Le fichier reçu est vide." to listOf("The received file is empty.", "El archivo recibido está vacío.", "Fichye resevwa a vid."),
+    "Partage impossible." to listOf("Unable to share this video.", "No se pudo compartir este video.", "Pa kapab pataje videyo sa a.")
 )
 
 internal fun translateMovieHubText(value: String, language: String): String {
