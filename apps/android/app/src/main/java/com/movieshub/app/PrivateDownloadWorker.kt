@@ -112,14 +112,22 @@ class PrivateDownloadWorker(
 
     private fun notification(percent: Int): ForegroundInfo {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val language = applicationContext.getSharedPreferences("moviehub_preferences", Context.MODE_PRIVATE)
+            .getString("language", "fr") ?: "fr"
         if (Build.VERSION.SDK_INT >= 26) {
-            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Téléchargements MovieHub", NotificationManager.IMPORTANCE_LOW))
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    translateMovieHubText("Téléchargements MovieHub", language),
+                    NotificationManager.IMPORTANCE_LOW
+                )
+            )
         }
         val title = inputData.getString("title") ?: "Téléchargement MovieHub"
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
-            .setContentText("Téléchargement : $percent %")
+            .setContentText(translateMovieHubText("Téléchargement : $percent %", language))
             .setProgress(100, percent, false)
             .setOngoing(true)
             .build()
