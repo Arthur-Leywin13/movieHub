@@ -294,20 +294,6 @@ private object MoviesHubApi {
         active
     }
 
-    suspend fun startPlayback(versionId: String, session: AuthSessionData): Pair<AuthSessionData, String> = withContext(Dispatchers.IO) {
-        val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
-            val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
-            val user = refreshed.getJSONObject("user")
-            AuthSessionData(
-                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
-                refreshed.getString("accessToken"),
-                refreshed.getString("refreshToken"),
-                System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
-            )
-        } else session
-        active to request("/versions/$versionId/play", "POST", bearer = active.accessToken)
-    }
-
     suspend fun logout(refreshToken: String) = withContext(Dispatchers.IO) {
         request("/auth/logout", "POST", JSONObject().put("refreshToken", refreshToken))
     }
@@ -603,11 +589,6 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                             selected, detailLoading,
                             isFavorite = selected?.id in favoriteIds,
                             onBack = { goBack() },
-                            onPlay = {
-                                offlinePlaybackPath = null
-                                offlinePlaybackTitle = null
-                                navigate(Screen.PLAYER)
-                            },
                             onDownload = { version ->
                                 if (session == null) navigate(Screen.AUTH)
                                 else enqueuePrivateDownload(context, selected, version)
@@ -631,14 +612,8 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                         )
                         Screen.PLAYER -> PlayerScreen(
                             item = selected,
-                            session = session,
                             offlineFilePath = offlinePlaybackPath,
                             offlineTitle = offlinePlaybackTitle,
-                            onSessionUpdate = {
-                                session = it
-                                SecureSessionStore.save(context, it)
-                            },
-                            onLogin = { navigate(Screen.AUTH) },
                             onBack = { goBack() }
                         )
                         Screen.DOWNLOADS -> DownloadsScreen(
@@ -1311,7 +1286,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onDownload: (VideoVersion) -> Unit, onFavorite: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onDownload: (VideoVersion) -> Unit, onFavorite: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(
             Modifier.fillMaxWidth().height(390.dp)
@@ -1367,25 +1342,8 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
                 color = UiColors.muted, fontSize = 13.sp, lineHeight = 20.sp
             )
             Spacer(Modifier.height(22.dp))
-            Button(
-                onClick = onPlay,
-                enabled = !item?.trailerUrl.isNullOrBlank() || !item?.versions.isNullOrEmpty(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(13.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = UiColors.accent,
-                    contentColor = Color(0xFF100D07),
-                    disabledContainerColor = UiColors.panel,
-                    disabledContentColor = UiColors.muted
-                )
-            ) {
-                Icon(Icons.Default.PlayArrow, null)
-                Spacer(Modifier.width(7.dp))
-                MovieHubText(
-                            else if (item?.trailerUrl.isNullOrBlank()) "Lecture indisponible"
-                    else "Voir la bande-annonce",
-                    fontWeight = FontWeight.Bold
-                )
+            if (!item?.versions.isNullOrEmpty()) {
+                MovieHubText("Télécharge une version pour la regarder hors connexion.", color = UiColors.muted, fontSize = 12.sp)
             }
             if (!item?.versions.isNullOrEmpty()) {
                 Spacer(Modifier.height(12.dp))
@@ -1415,7 +1373,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             }
             Spacer(Modifier.height(10.dp))
             MovieHubText(
-                "Le streaming démarre sans téléchargement. Le téléchargement est facultatif et sert uniquement à regarder hors connexion.",
+                "Télécharge une version pour la regarder hors connexion.",
                 color = UiColors.muted, fontSize = 11.sp, lineHeight = 16.sp
             )
             Spacer(Modifier.height(22.dp))
@@ -1426,210 +1384,62 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
 @Composable
 private fun PlayerScreen(
     item: MediaItem?,
-    session: AuthSessionData?,
     offlineFilePath: String?,
     offlineTitle: String?,
-    onSessionUpdate: (AuthSessionData) -> Unit,
-    onLogin: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
-    val versions = item?.versions.orEmpty()
-    var selectedVersion by remember(item?.id) { mutableStateOf(versions.firstOrNull()) }
-    var videoUrl by remember(item?.id, offlineFilePath) {
-        mutableStateOf(offlineFilePath?.let { File(it).toURI().toString() })
+    val file = remember(offlineFilePath) { offlineFilePath?.let(::File) }
+    val playableFile = remember(file) { file?.takeIf { it.isFile && it.canRead() } }
+    val prefs = remember(context) { context.getSharedPreferences("moviehub_offline_progress", Context.MODE_PRIVATE) }
+    val key = remember(file) { file?.absolutePath?.hashCode()?.let { "position_$it" } }
+    var resumeMs by remember(key) { mutableLongStateOf(key?.let { prefs.getLong(it, 0L) } ?: 0L) }
+    val videoUri = remember(playableFile) { playableFile?.toURI()?.toString() }
+    val error = when { offlineFilePath == null -> "Télécharge d’abord cette vidéo pour la regarder hors connexion."; playableFile == null -> "Fichier hors connexion introuvable."; else -> null }
+    fun saveProgress(position: Long, duration: Long) {
+        val progressKey = key ?: return
+        prefs.edit().putLong(progressKey, position.coerceAtLeast(0L)).putLong("${progressKey}_duration", duration.coerceAtLeast(0L)).apply()
+        resumeMs = position.coerceAtLeast(0L)
     }
-    var loading by remember { mutableStateOf(false) }
-    var playbackError by remember { mutableStateOf<String?>(null) }
-    var resumePositionSeconds by remember(item?.id) { mutableIntStateOf(0) }
-    var resumeVersionId by remember(item?.id) { mutableStateOf<String?>(null) }
-    var activeSession by remember(item?.id) { mutableStateOf(session) }
-
-    LaunchedEffect(session) { activeSession = session }
-
-    LaunchedEffect(item?.id, session?.user?.id) {
-        val current = session
-        val content = item
-        if (current != null && content != null && content.type.equals("MOVIE", ignoreCase = true)) {
-            runCatching { MoviesHubApi.authorizedGet("/me/history?limit=50", current) }
-                .onSuccess { (updated, raw) ->
-                    activeSession = updated
-                    onSessionUpdate(updated)
-                    val previous = MoviesHubApi.parseHistory(raw)
-                        .firstOrNull { it.content.id == content.id && !it.completed && it.positionSeconds > 5 }
-                    if (previous != null) {
-                        resumePositionSeconds = previous.positionSeconds
-                        resumeVersionId = previous.versionId
-                    }
-                }
-        }
-    }
-
-    LaunchedEffect(item?.id, versions.size, offlineFilePath) {
-        if (offlineFilePath != null) {
-            videoUrl = File(offlineFilePath).takeIf { it.isFile && it.canRead() }?.toURI()?.toString()
-                ?: run { playbackError = "Fichier hors connexion introuvable."; null }
-        } else if (versions.isEmpty()) {
-            videoUrl = item?.trailerUrl
-        } else {
-            videoUrl = null
-        }
-    }
-
-    // La lecture en ligne obtient directement une URL R2 temporaire.
-    // Elle n'appelle jamais la route de téléchargement et ne crée aucun fichier local.
-    LaunchedEffect(item?.id, selectedVersion?.id, activeSession?.user?.id, offlineFilePath) {
-        val chosen = selectedVersion
-        val current = activeSession
-        if (offlineFilePath == null && chosen != null && current != null) {
-            loading = true
-            playbackError = null
-            runCatching { MoviesHubApi.startPlayback(chosen.id, current) }
-                .onSuccess { (updated, raw) ->
-                    activeSession = updated
-                    onSessionUpdate(updated)
-                    val signedUrl = runCatching { JSONObject(raw).optString("url") }.getOrNull()
-                    if (!signedUrl.isNullOrBlank() && signedUrl.startsWith("https://")) {
-                        videoUrl = signedUrl
-                    } else {
-                        playbackError = "L’API n’a pas renvoyé de lien de streaming valide."
-                    }
-                }
-                .onFailure { playbackError = it.message ?: "Impossible de lancer le streaming." }
-            loading = false
-        }
-    }
-
-    suspend fun saveProgress(positionSeconds: Int, durationSeconds: Int, version: VideoVersion) {
-        val current = activeSession ?: return
-        val content = item ?: return
-        if (!content.type.equals("MOVIE", ignoreCase = true)) return
-        if (positionSeconds <= 0 || durationSeconds <= 0) return
-        runCatching {
-            MoviesHubApi.recordHistory(content.id, version.id, positionSeconds, durationSeconds, current)
-        }.onSuccess { updated ->
-            activeSession = updated
-            onSessionUpdate(updated)
-            resumePositionSeconds = positionSeconds
-            resumeVersionId = version.id
-        }
-    }
-
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = UiColors.text) }
-            MovieHubText(offlineTitle ?: item?.title ?: "Lecteur vidéo", color = UiColors.text, fontWeight = FontWeight.Bold)
+            MovieHubText(offlineTitle ?: item?.title ?: "Lecteur hors connexion", color = UiColors.text, fontWeight = FontWeight.Bold)
         }
-
-        if (offlineFilePath != null) {
-            MovieHubText("Lecture hors connexion", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
-        } else if (versions.isNotEmpty()) {
-            MovieHubText("Streaming en ligne • choisis ta qualité", color = UiColors.text, fontWeight = FontWeight.SemiBold)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                versions.forEach { version ->
-                    FilterChip(
-                        selected = selectedVersion?.id == version.id,
-                        onClick = { selectedVersion = version; videoUrl = null; playbackError = null },
-                        label = { MovieHubText(version.label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = UiColors.accent,
-                            selectedLabelColor = Color(0xFF100D07),
-                            labelColor = UiColors.text
-                        )
-                    )
-                }
-            }
-            if (resumePositionSeconds > 5 && (resumeVersionId == null || resumeVersionId == selectedVersion?.id)) {
-                val minutes = resumePositionSeconds / 60
-                val seconds = resumePositionSeconds % 60
-                MovieHubText("Reprise disponible à ${minutes}:${seconds.toString().padStart(2, '0')}", color = UiColors.accent, fontSize = 12.sp)
-            }
-            Button(
-                onClick = {
-                    val chosen = selectedVersion
-                    val current = activeSession
-                    if (chosen == null) playbackError = "Aucune version vidéo disponible."
-                    else if (current == null) onLogin()
-                    else {
-                        loading = true
-                        playbackError = null
-                        scope.launch {
-                            runCatching { MoviesHubApi.startPlayback(chosen.id, current) }
-                                .onSuccess { (updated, raw) ->
-                                    activeSession = updated
-                                    onSessionUpdate(updated)
-                                    val signedUrl = runCatching { JSONObject(raw).optString("url") }.getOrNull()
-                                    if (!signedUrl.isNullOrBlank() && signedUrl.startsWith("https://")) videoUrl = signedUrl
-                                    else playbackError = "L’API n’a pas renvoyé de lien vidéo valide."
-                                }
-                                .onFailure { playbackError = it.message ?: "Impossible de lancer la lecture." }
-                            loading = false
-                        }
-                    }
-                },
-                enabled = !loading && selectedVersion != null,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = Color(0xFF100D07))
-            ) {
-                if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Default.PlayArrow, null)
-                Spacer(Modifier.width(8.dp))
-                val canResume = resumePositionSeconds > 5 && (resumeVersionId == null || resumeVersionId == selectedVersion?.id)
-                MovieHubText(if (loading) "Préparation…" else if (canResume) "Reprendre la lecture" else "Lire cette version", fontWeight = FontWeight.Bold)
-            }
-        } else if (!item?.trailerUrl.isNullOrBlank()) {
-            MovieHubText("Bande-annonce", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
-        } else {
-            MovieHubText("Aucune version vidéo ni bande-annonce publiée.", color = UiColors.muted)
+        MovieHubText("Lecture hors connexion", color = UiColors.accent, fontWeight = FontWeight.SemiBold)
+        if (resumeMs > 5_000L) {
+            val minutes = resumeMs / 60_000L
+            val seconds = (resumeMs / 1_000L) % 60L
+            MovieHubText("Reprise locale à ${minutes}:${seconds.toString().padStart(2, '0')}", color = UiColors.accent, fontSize = 12.sp)
         }
-
-        playbackError?.let { MovieHubText(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-
-        if (videoUrl.isNullOrBlank()) {
+        error?.let { MovieHubText(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+        if (videoUri == null) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF171D26)), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.PlayCircleOutline, null, tint = UiColors.accent, modifier = Modifier.size(46.dp))
-                    MovieHubText("La vidéo apparaîtra ici", color = UiColors.muted, fontSize = 12.sp)
+                    Icon(Icons.Default.DownloadForOffline, null, tint = UiColors.accent, modifier = Modifier.size(46.dp))
+                    MovieHubText("Vidéo non disponible hors connexion", color = UiColors.muted, fontSize = 12.sp)
                 }
             }
         } else {
-            val versionForPlayer = selectedVersion
-            val player = remember(videoUrl) {
+            val player = remember(videoUri) {
                 ExoPlayer.Builder(context).build().apply {
-                    setMediaItem(PlayerMediaItem.fromUri(videoUrl!!))
-                    if (versionForPlayer != null && resumeVersionId == versionForPlayer.id) {
-                        seekTo(resumePositionSeconds * 1000L)
-                    }
+                    setMediaItem(PlayerMediaItem.fromUri(videoUri))
+                    if (resumeMs > 5_000L) seekTo(resumeMs)
                     prepare()
                     playWhenReady = true
                 }
             }
-            LaunchedEffect(player, versionForPlayer?.id) {
-                val version = versionForPlayer
-                if (version != null) {
-                    while (true) {
-                        delay(15_000)
-                        if (player.isPlaying) {
-                            val position = (player.currentPosition / 1000L).toInt()
-                            val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else version.durationSeconds ?: 0
-                            saveProgress(position, duration, version)
-                        }
-                    }
+            LaunchedEffect(player, key) {
+                while (true) {
+                    delay(5_000)
+                    saveProgress(player.currentPosition, player.duration)
                 }
             }
-            DisposableEffect(player, lifecycleOwner, versionForPlayer?.id) {
+            DisposableEffect(player, lifecycleOwner, key) {
                 val observer = LifecycleEventObserver { _, event ->
                     when (event) {
-                        Lifecycle.Event.ON_PAUSE -> {
-                            player.pause()
-                            if (versionForPlayer != null) {
-                                val position = (player.currentPosition / 1000L).toInt()
-                                val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else versionForPlayer.durationSeconds ?: 0
-                                scope.launch { saveProgress(position, duration, versionForPlayer) }
-                            }
-                        }
+                        Lifecycle.Event.ON_PAUSE -> { saveProgress(player.currentPosition, player.duration); player.pause() }
                         Lifecycle.Event.ON_RESUME -> if (player.playbackState != androidx.media3.common.Player.STATE_ENDED) player.play()
                         else -> Unit
                     }
@@ -1637,29 +1447,15 @@ private fun PlayerScreen(
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose {
                     lifecycleOwner.lifecycle.removeObserver(observer)
-                    if (versionForPlayer != null) {
-                        val position = (player.currentPosition / 1000L).toInt()
-                        val duration = if (player.duration > 0) (player.duration / 1000L).toInt() else versionForPlayer.durationSeconds ?: 0
-                        scope.launch { saveProgress(position, duration, versionForPlayer) }
-                    }
+                    saveProgress(player.currentPosition, player.duration)
                     player.release()
                 }
             }
-            AndroidView(
-                factory = { viewContext -> PlayerView(viewContext).apply { this.player = player; useController = true } },
-                update = { it.player = player },
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))
-            )
+            AndroidView(factory = { viewContext -> PlayerView(viewContext).apply { this.player = player; useController = true } }, update = { it.player = player }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)))
         }
-        MovieHubText(
-            if (offlineFilePath != null) "Cette vidéo est lue depuis le stockage privé de cet appareil."
-            else if (versions.isNotEmpty()) "La progression est synchronisée automatiquement lorsque tu regardes un film."
-            else "Aperçu de la bande-annonce officielle.",
-            color = UiColors.muted, fontSize = 12.sp
-        )
+        MovieHubText("Cette vidéo est lue depuis le stockage privé de cet appareil. La position de lecture est enregistrée localement.", color = UiColors.muted, fontSize = 12.sp)
     }
 }
-
 
 private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null) {
     val title = titleOverride ?: item?.title ?: "Film MovieHub"
