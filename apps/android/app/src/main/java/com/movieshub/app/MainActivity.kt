@@ -1796,6 +1796,15 @@ private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavo
     }
 }
 
+private fun formatPlaybackTime(seconds: Int): String {
+    val total = seconds.coerceAtLeast(0)
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    val remainingSeconds = total % 60
+    return if (hours > 0) "${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}"
+    else "${minutes}:${remainingSeconds.toString().padStart(2, '0')}"
+}
+
 @Composable
 private fun AccountListScreen(
     title: String,
