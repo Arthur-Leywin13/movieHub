@@ -165,7 +165,22 @@ private val translations = mapOf(
     "Impossible de charger cette catégorie" to listOf("Unable to load this category", "No se pudo cargar esta categoría", "Pa kapab chaje kategori sa a"),
     "Session active • jetons protégés sur cet appareil" to listOf("Active session • tokens protected on this device", "Sesión activa • tokens protegidos en este dispositivo", "Sesyon aktif • jeton yo pwoteje sou aparèy sa a"),
     "Téléchargement MovieHub" to listOf("MovieHub download", "Descarga de MovieHub", "Telechajman MovieHub"),
-    "Vidéo" to listOf("Video", "Video", "Videyo")
+    "Vidéo" to listOf("Video", "Video", "Videyo"),
+    "Impossible de charger le catalogue" to listOf("Unable to load the catalog", "No se pudo cargar el catálogo", "Pa kapab chaje katalòg la"),
+    "Favoris indisponibles" to listOf("Favorites unavailable", "Favoritos no disponibles", "Favori yo pa disponib"),
+    "Historique indisponible" to listOf("History unavailable", "Historial no disponible", "Istwa a pa disponib"),
+    "Suppression impossible" to listOf("Unable to remove item", "No se pudo eliminar", "Pa kapab retire eleman an"),
+    "Historique" to listOf("History", "Historial", "Istwa"),
+    "MovieHub" to listOf("MovieHub", "MovieHub", "MovieHub"),
+    "MoviesHub" to listOf("MovieHub", "MovieHub", "MovieHub"),
+    "Rechercher" to listOf("Search", "Buscar", "Chèche"),
+    "Explorer" to listOf("Explore", "Explorar", "Eksplore"),
+    "Retrouve ce contenu dans le catalogue MovieHub." to listOf("Find this title in the MovieHub catalog.", "Encuentra este título en el catálogo de MovieHub.", "Jwenn kontni sa a nan katalòg MovieHub."),
+    "Catalogue" to listOf("Catalog", "Catálogo", "Katalòg"),
+    "comedie" to listOf("comedy", "comedia", "komedi"),
+    "Sans titre" to listOf("Untitled", "Sin título", "San tit"),
+    "Film MovieHub" to listOf("MovieHub movie", "Película de MovieHub", "Fim MovieHub"),
+    "Se connecter" to listOf("Sign in", "Iniciar sesión", "Konekte")
 )
 
 internal fun translateMovieHubText(value: String, language: String): String {
