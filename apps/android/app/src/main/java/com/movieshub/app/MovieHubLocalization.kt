@@ -181,7 +181,12 @@ private val translations = mapOf(
     "comedie" to listOf("comedy", "comedia", "komedi"),
     "Sans titre" to listOf("Untitled", "Sin título", "San tit"),
     "Film MovieHub" to listOf("MovieHub movie", "Película de MovieHub", "Fim MovieHub"),
-    "Se connecter" to listOf("Sign in", "Iniciar sesión", "Konekte")
+    "Se connecter" to listOf("Sign in", "Iniciar sesión", "Konekte"),
+    "Lecture hors connexion" to listOf("Offline playback", "Reproducción sin conexión", "Lekti san entènèt"),
+    "Fichier hors connexion introuvable." to listOf("Offline file not found.", "No se encontró el archivo sin conexión.", "Nou pa jwenn fichye san entènèt la."),
+    "Lire hors connexion" to listOf("Play offline", "Reproducir sin conexión", "Jwe san entènèt"),
+    "Supprimer" to listOf("Delete", "Eliminar", "Efase"),
+    "Cette vidéo est lue depuis le stockage privé de cet appareil." to listOf("This video is playing from this device's private storage.", "Este video se reproduce desde el almacenamiento privado de este dispositivo.", "Videyo sa a ap jwe nan espas prive aparèy sa a.")
 )
 
 internal fun translateMovieHubText(value: String, language: String): String {
