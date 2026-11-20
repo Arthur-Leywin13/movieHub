@@ -22,7 +22,7 @@ Toutes les autorisations et transitions de statut sont vérifiées par l’API. 
 ## Lancer en local
 
 1. Démarrer l’API MoviesHub sur le port configuré (par défaut `3000`).
-2. Depuis la racine du dépôt, servir le dossier statique :
+2. Ajouter temporairement `API_CORS_ORIGINS=http://localhost:4173` à la configuration de l’API puis redémarrer celle-ci. En production, utiliser uniquement l’origine HTTPS réelle du dashboard.\n3. Depuis la racine du dépôt, servir le dossier statique :
 
    ```bash
    python -m http.server 4173 --directory apps/admin
