@@ -165,6 +165,7 @@ private val translations = mapOf(
     "Impossible de charger cette catégorie" to listOf("Unable to load this category", "No se pudo cargar esta categoría", "Pa kapab chaje kategori sa a"),
     "Session active • jetons protégés sur cet appareil" to listOf("Active session • tokens protected on this device", "Sesión activa • tokens protegidos en este dispositivo", "Sesyon aktif • jeton yo pwoteje sou aparèy sa a"),
     "Téléchargement MovieHub" to listOf("MovieHub download", "Descarga de MovieHub", "Telechajman MovieHub"),
+    "Téléchargements MovieHub" to listOf("MovieHub downloads", "Descargas de MovieHub", "Telechajman MovieHub"),
     "Vidéo" to listOf("Video", "Video", "Videyo"),
     "Impossible de charger le catalogue" to listOf("Unable to load the catalog", "No se pudo cargar el catálogo", "Pa kapab chaje katalòg la"),
     "Favoris indisponibles" to listOf("Favorites unavailable", "Favoritos no disponibles", "Favori yo pa disponib"),
