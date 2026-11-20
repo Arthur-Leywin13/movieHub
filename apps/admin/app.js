@@ -200,8 +200,7 @@
       <div class="recent-row"><div class="recent-poster">✦</div><div class="recent-info"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(TYPE_LABELS[item.type] || item.type)} · ${escapeHtml(STATUS_LABELS[item.status] || item.status)}</small></div><button class="row-action" data-open-content="${escapeHtml(item.id)}">Ouvrir</button></div>`).join("") || '<div class="empty-state">Le catalogue est encore vide.</div>';
     try {
       const schedule = await api("/admin/scheduled-publications?page=1&limit=100");
-      const jobs = schedule.items || schedule.scheduledPublications || [];
-      $("#statScheduled").textContent = jobs.filter((job) => ["PENDING", "SCHEDULED"].includes(job.status)).length;
+      $("#statScheduled").textContent = Number(schedule.total ?? (schedule.items || []).filter((job) => job.status === "PENDING").length);
     } catch { $("#statScheduled").textContent = "—"; }
   }
 
@@ -220,11 +219,12 @@
       const season = entry.season;
       const episodes = entry.episodes || [];
       return `<div class="detail-section"><div class="panel-heading"><div><p class="eyebrow">SAISON ${escapeHtml(season.number)}</p><h3>${escapeHtml(season.title || "Saison " + season.number)}</h3></div><span class="status-tag ${String(season.status).toLowerCase()}">${escapeHtml(STATUS_LABELS[season.status] || season.status)}</span></div>
-        <div class="simple-list">${episodes.map((entry) => `<div class="simple-row"><div><strong>${escapeHtml(entry.episode.title || "Épisode " + entry.episode.number)}</strong><small>${escapeHtml(STATUS_LABELS[entry.episode.status] || entry.episode.status)} · ${(entry.versions || []).length} version(s)</small></div><span class="muted">#${escapeHtml(entry.episode.number)}</span></div>`).join("") || '<div class="empty-state">Aucun épisode dans cette saison.</div>'}</div>
+        <div class="simple-list">${episodes.map((entry) => `<div class="episode-card"><div class="simple-row"><div><strong>${escapeHtml(entry.episode.title || "Épisode " + entry.episode.number)}</strong><small>${escapeHtml(STATUS_LABELS[entry.episode.status] || entry.episode.status)} · ${(entry.versions || []).length} version(s) · ${escapeHtml(entry.episode.id)}</small><div class="detail-actions">${(TRANSITIONS[entry.episode.status] || []).map((status) => `<button class="row-action" data-set-episode-status="${status}" data-episode-id="${escapeHtml(entry.episode.id)}">${escapeHtml(STATUS_LABELS[status] || status)}</button>`).join("")}</div></div><span class="muted">#${escapeHtml(entry.episode.number)}</span></div><div class="simple-list">${(entry.versions || []).map(renderVersion).join("")}</div><form class="detail-form episode-version-form" data-episode-id="${escapeHtml(entry.episode.id)}"><div class="form-grid"><label class="span-two">ID du fichier vidéo<input name="mediaFileId" required placeholder="ID du média envoyé"></label><label>Libellé<input name="label" placeholder="720p"></label><label>Hauteur<input name="height" type="number" min="1" max="20000"></label><label>Largeur<input name="width" type="number" min="1" max="20000"></label><label>Durée (secondes)<input name="durationSeconds" type="number" min="1" max="86400"></label><label class="span-two">Langues audio<input name="audioLanguages" required placeholder="fr, en"></label></div><button class="btn secondary" type="submit">＋ Ajouter une version à cet épisode</button></form></div>`).join("") || '<div class="empty-state">Aucun épisode dans cette saison.</div>'}</div>
         <form class="detail-form episode-form" data-season-id="${escapeHtml(season.id)}"><div class="form-grid"><label>Numéro d’épisode<input name="number" type="number" min="1" max="9999" required></label><label>Titre<input name="title" maxlength="200" placeholder="Titre de l’épisode"></label><label class="span-two">Description<textarea name="description" rows="2"></textarea></label><label class="span-two">Note de sortie<input name="releaseNote" maxlength="2000"></label></div><button class="btn secondary" type="submit">＋ Ajouter un épisode</button></form>
       </div>`;
     }).join("");
-    const versions = (data.versions || []).map((v) => `<div class="simple-row"><div><strong>${escapeHtml(v.label || (v.height ? v.height + "p" : "Version vidéo"))}</strong><small>${escapeHtml((v.audioTracks || []).map((x) => x.languageCode).join(", ") || "Pistes audio non précisées")} · ${escapeHtml(STATUS_LABELS[v.status] || v.status)}</small></div><span class="muted">${escapeHtml(v.id)}</span></div>`).join("");
+    const renderVersion = (v) => `<div class="simple-row"><div><strong>${escapeHtml(v.label || (v.height ? v.height + "p" : "Version vidéo"))}</strong><small>${escapeHtml((v.audioTracks || []).map((x) => x.languageCode).join(", ") || "Pistes audio non précisées")} · ${escapeHtml(STATUS_LABELS[v.status] || v.status)} · ${escapeHtml(v.id)}</small><div class="detail-actions">${(TRANSITIONS[v.status] || []).map((status) => `<button class="row-action" data-set-version-status="${status}" data-version-id="${escapeHtml(v.id)}">${escapeHtml(STATUS_LABELS[status] || status)}</button>`).join("")}</div></div></div>`;
+    const versions = (data.versions || []).map(renderVersion).join("");
     const posters = (data.posters || []).map((p) => `<div class="simple-row"><div><strong>${escapeHtml(p.kind || "Affiche")} ${p.isPrimary ? "· Principale" : ""}</strong><small>${escapeHtml(p.id)} · ${p.archivedAt ? "Archivée" : "Active"}</small></div></div>`).join("");
     const trailers = (data.trailers || []).map((t) => `<div class="simple-row"><div><strong>${escapeHtml(t.title || "Bande-annonce")} ${t.isPrimary ? "· Principale" : ""}</strong><small>${escapeHtml(t.id)} · ${t.externalUrl ? "Lien externe" : "Fichier média"}</small></div></div>`).join("");
     $("#detailBody").innerHTML = `
@@ -233,7 +233,7 @@
       <div class="detail-section"><h3>Modifier la fiche</h3><form id="editContentForm" class="detail-form"><div class="form-grid"><label>Titre<input name="title" maxlength="200" value="${escapeHtml(content.title || "")}" required></label><label>Année<input name="year" type="number" min="1888" max="2100" value="${escapeHtml(content.year || "")}"></label><label>Date de sortie<input name="releaseDate" type="date" value="${escapeHtml(content.releaseDate || "")}"></label><label class="span-two">Description<textarea name="description" rows="3" maxlength="5000">${escapeHtml(content.description || "")}</textarea></label></div><button class="btn secondary" type="submit">Prévisualiser les modifications</button></form></div>
       <div class="detail-section"><h3>Publication</h3><p class="muted" style="font-size:10px">Chaque changement de statut est vérifié par le serveur et enregistré dans le journal d’audit.</p><div class="detail-actions">${statusActions(content)}</div></div>
       ${content.type !== "MOVIE" ? `<div class="detail-section"><h3>Saisons et épisodes</h3>${seasons}<form id="seasonForm" class="detail-form"><div class="form-grid"><label>Numéro de saison<input name="number" type="number" min="0" max="200" required></label><label>Titre<input name="title" maxlength="200" placeholder="Saison 1"></label><label>Date de sortie<input name="releaseDate" type="date" required></label><label class="check-label"><input name="featuredAsNewSeason" type="checkbox"> Mettre en avant comme nouvelle saison</label></div><button class="btn primary" type="submit">＋ Créer une saison</button></form></div>` : ""}
-      <div class="detail-section"><h3>Versions vidéo</h3><div class="simple-list">${versions || '<div class="empty-state">Aucune version vidéo associée.</div>'}</div><form id="versionForm" class="detail-form"><div class="form-grid"><label class="span-two">ID du fichier vidéo<input name="mediaFileId" required placeholder="ID obtenu après un envoi média"></label><label>Libellé<input name="label" placeholder="720p"></label><label>Hauteur (px)<input name="height" type="number" min="1" max="20000" placeholder="720"></label><label>Largeur (px)<input name="width" type="number" min="1" max="20000" placeholder="1280"></label><label>Durée (secondes)<input name="durationSeconds" type="number" min="1" max="86400"></label><label class="span-two">Langues audio (codes séparés par virgules)<input name="audioLanguages" required placeholder="fr, en"></label></div><button class="btn secondary" type="submit">＋ Ajouter une version</button></form></div>
+      ${content.type === "MOVIE" ? `<div class="detail-section"><h3>Versions vidéo</h3><div class="simple-list">${versions || '<div class="empty-state">Aucune version vidéo associée.</div>'}</div><form id="versionForm" class="detail-form"><div class="form-grid"><label class="span-two">ID du fichier vidéo<input name="mediaFileId" required placeholder="ID obtenu après un envoi média"></label><label>Libellé<input name="label" placeholder="720p"></label><label>Hauteur (px)<input name="height" type="number" min="1" max="20000" placeholder="720"></label><label>Largeur (px)<input name="width" type="number" min="1" max="20000" placeholder="1280"></label><label>Durée (secondes)<input name="durationSeconds" type="number" min="1" max="86400"></label><label class="span-two">Langues audio (codes séparés par virgules)<input name="audioLanguages" required placeholder="fr, en"></label></div><button class="btn secondary" type="submit">＋ Ajouter une version</button></form></div>` : ""}
       <div class="detail-section"><h3>Affiches</h3><div class="simple-list">${posters || '<div class="empty-state">Aucune affiche associée.</div>'}</div><form id="posterForm" class="detail-form"><div class="form-grid"><label class="span-two">ID du fichier image<input name="mediaFileId" required placeholder="ID du fichier IMAGE"></label><label>Type<select name="kind"><option>POSTER</option><option>PROMOTIONAL</option></select></label><label class="check-label"><input name="makePrimary" type="checkbox" checked> Définir comme affiche principale</label></div><button class="btn secondary" type="submit">＋ Ajouter une affiche</button></form></div>
       <div class="detail-section"><h3>Bandes-annonces</h3><div class="simple-list">${trailers || '<div class="empty-state">Aucune bande-annonce associée.</div>'}</div><form id="trailerForm" class="detail-form"><div class="form-grid"><label>Titre<input name="title" maxlength="200" placeholder="Bande-annonce officielle"></label><label>ID du média<input name="mediaFileId" placeholder="ID fichier TRAILER_VIDEO"></label><label class="span-two">Ou URL HTTPS externe<input name="externalUrl" type="url" placeholder="https://…"></label><label class="check-label"><input name="makePrimary" type="checkbox"> Définir comme principale</label></div><button class="btn secondary" type="submit">＋ Ajouter une bande-annonce</button></form></div>
     `;
@@ -332,6 +332,36 @@
     };
     const result = await api("/admin/contents/" + state.currentContent.content.id + "/versions", { method: "POST", body: payload });
     toast("Version ajoutée en brouillon. Publie-la séparément après vérification.");
+    await openContent(state.currentContent.content.id);
+  }
+
+  async function createEpisodeVersion(event) {
+    event.preventDefault();
+    const form = event.currentTarget, values = formObject(form);
+    const payload = {
+      mediaFileId: values.mediaFileId.trim(),
+      audioLanguages: splitValues(values.audioLanguages).map((x) => x.toLowerCase()),
+      ...(values.label ? { label: values.label } : {}),
+      ...(values.height ? { height: Number(values.height) } : {}),
+      ...(values.width ? { width: Number(values.width) } : {}),
+      ...(values.durationSeconds ? { durationSeconds: Number(values.durationSeconds) } : {})
+    };
+    await api("/admin/episodes/" + form.dataset.episodeId + "/versions", { method: "POST", body: payload });
+    toast("Version ajoutée à l’épisode en brouillon.");
+    await openContent(state.currentContent.content.id);
+  }
+
+  async function setVersionStatus(id, status) {
+    if (!confirm("Confirmer le statut de cette version : " + (STATUS_LABELS[status] || status) + " ?")) return;
+    await api("/admin/versions/" + id + "/status", { method: "POST", body: { status } });
+    toast("Statut de la version mis à jour.");
+    await openContent(state.currentContent.content.id);
+  }
+
+  async function setEpisodeStatus(id, status) {
+    if (!confirm("Confirmer le statut de cet épisode : " + (STATUS_LABELS[status] || status) + " ?")) return;
+    await api("/admin/episodes/" + id + "/status", { method: "POST", body: { status } });
+    toast("Statut de l’épisode mis à jour.");
     await openContent(state.currentContent.content.id);
   }
 
@@ -443,8 +473,12 @@
   async function loadWithdrawals() {
     const data = await api("/admin/content-withdrawals?page=1&limit=100");
     const items = data.items || data.withdrawals || [];
-    $("#withdrawalList").innerHTML = items.map((item) => `
-      <div class="simple-row"><div><strong>Retrait · ${escapeHtml(item.status || "Programmé")}</strong><small>${escapeHtml(item.contentId)} · Préavis : ${escapeHtml(formatDate(item.noticeStartsAt))} · Retrait : ${escapeHtml(formatDate(item.effectiveAt))}</small></div>${["PENDING", "SCHEDULED", "NOTICE"].includes(item.status) ? `<button class="row-action" data-cancel-withdrawal="${escapeHtml(item.id)}">Annuler</button>` : ""}</div>`).join("") || '<div class="empty-state">Aucun retrait programmé.</div>';
+    $("#withdrawalList").innerHTML = items.map((item) => {
+      const status = item.canceledAt ? "Annulé" : item.executedAt ? "Exécuté" : "En attente";
+      const title = item.content?.title || item.contentId;
+      const active = !item.canceledAt && !item.executedAt;
+      return `<div class="simple-row"><div><strong>Retrait · ${escapeHtml(title)} · ${status}</strong><small>Préavis : ${escapeHtml(formatDate(item.noticeStartsAt))} · Retrait : ${escapeHtml(formatDate(item.effectiveAt))}</small></div>${active ? `<button class="row-action" data-cancel-withdrawal="${escapeHtml(item.id)}">Annuler</button>` : ""}</div>`;
+    }).join("") || '<div class="empty-state">Aucun retrait programmé.</div>';
   }
 
   async function createWithdrawal(event) {
@@ -517,6 +551,8 @@
       if (target.hasAttribute("data-close-dialog")) target.closest("dialog")?.close();
       if (target.dataset.openContent) openContent(target.dataset.openContent).catch((error) => toast(error.message, true));
       if (target.dataset.setStatus) setContentStatus(target.dataset.statusId, target.dataset.setStatus).catch((error) => toast(error.message, true));
+      if (target.dataset.setVersionStatus) setVersionStatus(target.dataset.versionId, target.dataset.setVersionStatus).catch((error) => toast(error.message, true));
+      if (target.dataset.setEpisodeStatus) setEpisodeStatus(target.dataset.episodeId, target.dataset.setEpisodeStatus).catch((error) => toast(error.message, true));
       if (target.dataset.cancelSchedule) {
         if (confirm("Annuler cette action programmée ?")) api("/admin/scheduled-publications/" + target.dataset.cancelSchedule, { method: "DELETE" }).then(loadSchedules).then(() => toast("Programmation annulée.")).catch((error) => toast(error.message, true));
       }
@@ -536,6 +572,7 @@
       if (form.id === "editContentForm") handlers.editContent(event).catch((error) => toast(error.message, true));
       else if (form.id && handlers[form.id]) handlers[form.id](event).catch((error) => toast(error.message, true));
       else if (form.classList.contains("episode-form")) createEpisode(event).catch((error) => toast(error.message, true));
+      else if (form.classList.contains("episode-version-form")) createEpisodeVersion(event).catch((error) => toast(error.message, true));
     });
     $("#uploadForm").addEventListener("submit", (event) => uploadMedia(event).catch((error) => toast(error.message, true)));
     $("#mediaFile").addEventListener("change", (event) => {
