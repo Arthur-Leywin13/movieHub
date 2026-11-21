@@ -196,7 +196,7 @@ class PrivateDownloadWorker(
 
             val safeName = activeLink.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._ -]"), "_").take(150)
             val outputDirectory = if (seriesFolder != null && seasonNumber > 0) {
-                val safeSeries = seriesFolder.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(80).ifBlank { "Série MovieHub" }
+                val safeSeries = seriesFolder.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().trim('.', ' ').take(80).ifBlank { "Serie MovieHub" }
                 val seasonFolderName = "Saison " + seasonNumber.toString().padStart(2, '0')
                 File(File(dir, safeSeries), seasonFolderName).apply { mkdirs() }
             } else dir
