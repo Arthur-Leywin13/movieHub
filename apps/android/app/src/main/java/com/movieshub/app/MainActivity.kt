@@ -1718,7 +1718,13 @@ private fun DownloadsScreen(
                                     MovieHubText("En pause • fichier partiel conservé en privé", color = UiColors.muted, fontSize = 12.sp)
                                     val versionId = info.progress.getString("versionId")
                                     if (versionId != null) {
-                                        TextButton(onClick = { enqueuePrivateDownload(context, null, VideoVersion(versionId, label, null, null), title) }) {
+                                        TextButton(onClick = { enqueuePrivateDownload(
+                                            context, null, VideoVersion(versionId, label, null, null), title,
+                                            seriesFolder = info.progress.getString("seriesFolder"),
+                                            seasonNumber = info.progress.getInt("seasonNumber", 0).takeIf { it > 0 },
+                                            episodeNumber = info.progress.getInt("episodeNumber", 0).takeIf { it > 0 },
+                                            episodeTitle = info.progress.getString("episodeTitle")
+                                        ) }) {
                                             MovieHubText("Reprendre", color = UiColors.accent)
                                         }
                                     }
