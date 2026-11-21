@@ -625,6 +625,30 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                                 if (session == null) navigate(Screen.AUTH)
                                 else enqueuePrivateDownload(context, selected, version)
                             },
+                            onDownloadSeason = { season ->
+                                if (session == null) navigate(Screen.AUTH)
+                                else {
+                                    val series = selected
+                                    if (series != null) scope.launch {
+                                        runCatching { MoviesHubApi.episodes(season.id) }
+                                            .onSuccess { episodes ->
+                                                episodes.forEach { episode ->
+                                                    val version = episode.versions.sortedByDescending { it.height ?: 0 }.firstOrNull()
+                                                    if (version != null) enqueuePrivateDownload(
+                                                        context, series, version,
+                                                        titleOverride = series.title + " • S" + season.number.toString().padStart(2, '0') + "E" + episode.number.toString().padStart(2, '0') + " • " + episode.title,
+                                                        seriesFolder = series.title,
+                                                        seasonNumber = season.number,
+                                                        episodeNumber = episode.number,
+                                                        episodeTitle = episode.title
+                                                    )
+                                                }
+                                                transferNotice = if (episodes.isEmpty()) "Aucun épisode publié à télécharger." else episodes.size.toString() + " épisode(s) ajoutés à la file de téléchargement."
+                                            }
+                                            .onFailure { transferNotice = it.message ?: "Impossible de charger les épisodes." }
+                                    }
+                                }
+                            },
                             onFavorite = {
                                 val item = selected
                                 val current = session
@@ -1318,7 +1342,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onDownload: (VideoVersion) -> Unit, onFavorite: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onDownload: (VideoVersion) -> Unit, onDownloadSeason: (SeasonRef) -> Unit, onFavorite: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(
             Modifier.fillMaxWidth().height(390.dp)
@@ -1376,6 +1400,17 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             Spacer(Modifier.height(22.dp))
             if (!item?.versions.isNullOrEmpty()) {
                 MovieHubText("Télécharge une version pour la regarder hors connexion.", color = UiColors.muted, fontSize = 12.sp)
+            }
+            item?.seasons.orEmpty().forEach { season ->
+                OutlinedButton(
+                    onClick = { onDownloadSeason(season) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                ) {
+                    Icon(Icons.Default.Download, null)
+                    Spacer(Modifier.width(8.dp))
+                    MovieHubText("Télécharger " + season.title + " (" + season.episodeCount + " épisodes)")
+                }
             }
             if (!item?.versions.isNullOrEmpty()) {
                 Spacer(Modifier.height(12.dp))
@@ -1489,7 +1524,10 @@ private fun PlayerScreen(
     }
 }
 
-private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null) {
+private fun enqueuePrivateDownload(
+    context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null,
+    seriesFolder: String? = null, seasonNumber: Int? = null, episodeNumber: Int? = null, episodeTitle: String? = null
+) {
     val title = titleOverride ?: item?.title ?: "Film MovieHub"
     val request = OneTimeWorkRequestBuilder<PrivateDownloadWorker>()
         .setInputData(
@@ -1497,6 +1535,10 @@ private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: 
                 .putString("versionId", version.id)
                 .putString("title", title)
                 .putString("versionLabel", version.label)
+                .putString("seriesFolder", seriesFolder)
+                .putInt("seasonNumber", seasonNumber ?: 0)
+                .putInt("episodeNumber", episodeNumber ?: 0)
+                .putString("episodeTitle", episodeTitle)
                 .build()
         )
         .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
