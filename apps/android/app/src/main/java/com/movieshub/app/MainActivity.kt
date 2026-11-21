@@ -172,6 +172,9 @@ private data class VideoVersion(
     val durationSeconds: Int?
 )
 
+private data class SeasonRef(val id: String, val number: Int, val title: String, val episodeCount: Int)
+private data class EpisodeRef(val number: Int, val title: String, val versions: List<VideoVersion>)
+
 private data class MediaItem(
     val id: String,
     val title: String,
@@ -181,7 +184,8 @@ private data class MediaItem(
     val poster: String? = null,
     val slug: String = id,
     val trailerUrl: String? = null,
-    val versions: List<VideoVersion> = emptyList()
+    val versions: List<VideoVersion> = emptyList(),
+    val seasons: List<SeasonRef> = emptyList()
 )
 
 private object MoviesHubApi {
@@ -354,6 +358,25 @@ private object MoviesHubApi {
         runCatching { parseItem(JSONObject(get("/contents/${java.net.URLEncoder.encode(slug, "UTF-8")}"))) }.getOrNull()
     }
 
+    suspend fun episodes(seasonId: String): List<EpisodeRef> = withContext(Dispatchers.IO) {
+        val root = JSONObject(get("/seasons/${java.net.URLEncoder.encode(seasonId, "UTF-8")}/episodes"))
+        val array = root.optJSONArray("episodes") ?: return@withContext emptyList()
+        buildList {
+            for (i in 0 until array.length()) {
+                val e = array.optJSONObject(i) ?: continue
+                val va = e.optJSONArray("versions") ?: continue
+                val versions = buildList {
+                    for (j in 0 until va.length()) {
+                        val v = va.optJSONObject(j) ?: continue
+                        val id = v.optString("id")
+                        if (id.isNotBlank()) add(VideoVersion(id, v.optString("label").ifBlank { "Vidéo" }, v.optInt("height").takeIf { it > 0 }, v.optInt("durationSeconds").takeIf { it > 0 }))
+                    }
+                }
+                add(EpisodeRef(e.optInt("number"), e.optString("title").ifBlank { "Épisode " + e.optInt("number") }, versions))
+            }
+        }.sortedBy { it.number }
+    }
+
     private fun parseMedia(raw: String): List<MediaItem> {
         val root = JSONObject(raw)
         val result = mutableListOf<MediaItem>()
@@ -388,6 +411,14 @@ private object MoviesHubApi {
             ?: source.optString("imageUrl").takeIf { it.startsWith("http") }
             ?: posterObject?.optString("url")?.takeIf { it.startsWith("http") }
         val versionsArray = source.optJSONArray("versions")
+        val seasonsArray = source.optJSONArray("seasons")
+        val seasons = buildList {
+            if (seasonsArray != null) for (i in 0 until seasonsArray.length()) {
+                val s = seasonsArray.optJSONObject(i) ?: continue
+                val sid = s.optString("id")
+                if (sid.isNotBlank()) add(SeasonRef(sid, s.optInt("number"), s.optString("title").ifBlank { "Saison " + s.optInt("number") }, s.optInt("episodeCount")))
+            }
+        }.sortedBy { it.number }
         val versions = buildList {
             if (versionsArray != null) for (index in 0 until versionsArray.length()) {
                 val version = versionsArray.optJSONObject(index) ?: continue
@@ -408,7 +439,8 @@ private object MoviesHubApi {
             description = source.optString("description", ""),
             poster = poster,
             trailerUrl = trailerUrl,
-            versions = versions
+            versions = versions,
+            seasons = seasons
         )
     }
 }
