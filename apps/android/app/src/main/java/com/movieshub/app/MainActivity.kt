@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -104,6 +105,7 @@ class MainActivity : ComponentActivity() {
     private fun extractIncomingVideo(source: Intent?): Uri? {
         val incoming = source ?: return null
         if (incoming.action != Intent.ACTION_SEND && incoming.action != Intent.ACTION_VIEW) return null
+        if (incoming.action == Intent.ACTION_VIEW && incoming.data?.scheme == "moviehub" && incoming.data?.host == "receive") return incoming.data
         val mime = incoming.type ?: return null
         if (!mime.startsWith("video/") && mime != "application/octet-stream") return null
         if (incoming.action == Intent.ACTION_VIEW) return incoming.data
@@ -172,6 +174,9 @@ private data class VideoVersion(
     val durationSeconds: Int?
 )
 
+private data class SeasonRef(val id: String, val number: Int, val title: String, val episodeCount: Int)
+private data class EpisodeRef(val number: Int, val title: String, val versions: List<VideoVersion>)
+
 private data class MediaItem(
     val id: String,
     val title: String,
@@ -181,7 +186,8 @@ private data class MediaItem(
     val poster: String? = null,
     val slug: String = id,
     val trailerUrl: String? = null,
-    val versions: List<VideoVersion> = emptyList()
+    val versions: List<VideoVersion> = emptyList(),
+    val seasons: List<SeasonRef> = emptyList()
 )
 
 private object MoviesHubApi {
@@ -354,6 +360,25 @@ private object MoviesHubApi {
         runCatching { parseItem(JSONObject(get("/contents/${java.net.URLEncoder.encode(slug, "UTF-8")}"))) }.getOrNull()
     }
 
+    suspend fun episodes(seasonId: String): List<EpisodeRef> = withContext(Dispatchers.IO) {
+        val root = JSONObject(get("/seasons/${java.net.URLEncoder.encode(seasonId, "UTF-8")}/episodes"))
+        val array = root.optJSONArray("episodes") ?: return@withContext emptyList()
+        buildList {
+            for (i in 0 until array.length()) {
+                val e = array.optJSONObject(i) ?: continue
+                val va = e.optJSONArray("versions") ?: continue
+                val versions = buildList {
+                    for (j in 0 until va.length()) {
+                        val v = va.optJSONObject(j) ?: continue
+                        val id = v.optString("id")
+                        if (id.isNotBlank()) add(VideoVersion(id, v.optString("label").ifBlank { "Vidéo" }, v.optInt("height").takeIf { it > 0 }, v.optInt("durationSeconds").takeIf { it > 0 }))
+                    }
+                }
+                add(EpisodeRef(e.optInt("number"), e.optString("title").ifBlank { "Épisode " + e.optInt("number") }, versions))
+            }
+        }.sortedBy { it.number }
+    }
+
     private fun parseMedia(raw: String): List<MediaItem> {
         val root = JSONObject(raw)
         val result = mutableListOf<MediaItem>()
@@ -388,6 +413,14 @@ private object MoviesHubApi {
             ?: source.optString("imageUrl").takeIf { it.startsWith("http") }
             ?: posterObject?.optString("url")?.takeIf { it.startsWith("http") }
         val versionsArray = source.optJSONArray("versions")
+        val seasonsArray = source.optJSONArray("seasons")
+        val seasons = buildList {
+            if (seasonsArray != null) for (i in 0 until seasonsArray.length()) {
+                val s = seasonsArray.optJSONObject(i) ?: continue
+                val sid = s.optString("id")
+                if (sid.isNotBlank()) add(SeasonRef(sid, s.optInt("number"), s.optString("title").ifBlank { "Saison " + s.optInt("number") }, s.optInt("episodeCount")))
+            }
+        }.sortedBy { it.number }
         val versions = buildList {
             if (versionsArray != null) for (index in 0 until versionsArray.length()) {
                 val version = versionsArray.optJSONObject(index) ?: continue
@@ -408,7 +441,8 @@ private object MoviesHubApi {
             description = source.optString("description", ""),
             poster = poster,
             trailerUrl = trailerUrl,
-            versions = versions
+            versions = versions,
+            seasons = seasons
         )
     }
 }
@@ -429,10 +463,13 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
     LaunchedEffect(incomingShareUri) {
         val uri = incomingShareUri
         if (uri != null) {
-            runCatching { importSharedVideo(context, uri) }
-                .onSuccess {
+            runCatching {
+                if (uri.scheme == "moviehub") receiveMovieHubTransfer(context, uri)
+                else listOf(importSharedVideo(context, uri))
+            }
+                .onSuccess { received ->
                     importedVideos = listSharedVideos(context)
-                    transferNotice = "Vidéo reçue : ${it.title}"
+                    transferNotice = if (uri.scheme == "moviehub") received.size.toString() + " vidéo(s) reçue(s) en transfert local." else "Vidéo reçue : " + received.firstOrNull()?.title
                     screen = Screen.DOWNLOADS
                 }
                 .onFailure { transferNotice = it.message ?: "Réception impossible." }
@@ -592,6 +629,34 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                             onDownload = { version ->
                                 if (session == null) navigate(Screen.AUTH)
                                 else enqueuePrivateDownload(context, selected, version)
+                            },
+                            onDownloadSeason = { season ->
+                                if (session == null) navigate(Screen.AUTH)
+                                else {
+                                    val series = selected
+                                    if (series != null) scope.launch {
+                                        runCatching { MoviesHubApi.episodes(season.id) }
+                                            .onSuccess { episodes ->
+                                                var queued = 0
+                                                episodes.forEach { episode ->
+                                                    val version = episode.versions.sortedByDescending { it.height ?: 0 }.firstOrNull()
+                                                    if (version != null) {
+                                                        enqueuePrivateDownload(
+                                                            context, series, version,
+                                                            titleOverride = series.title + " • S" + season.number.toString().padStart(2, '0') + "E" + episode.number.toString().padStart(2, '0') + " • " + episode.title,
+                                                            seriesFolder = series.title,
+                                                            seasonNumber = season.number,
+                                                            episodeNumber = episode.number,
+                                                            episodeTitle = episode.title
+                                                        )
+                                                        queued++
+                                                    }
+                                                }
+                                                transferNotice = if (queued == 0) "Aucun épisode publié avec une vidéo disponible." else queued.toString() + " épisode(s) ajoutés à la file de téléchargement."
+                                            }
+                                            .onFailure { transferNotice = it.message ?: "Impossible de charger les épisodes." }
+                                    }
+                                }
                             },
                             onFavorite = {
                                 val item = selected
@@ -1286,7 +1351,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
 }
 
 @Composable
-private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onDownload: (VideoVersion) -> Unit, onFavorite: () -> Unit) {
+private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean, onBack: () -> Unit, onDownload: (VideoVersion) -> Unit, onDownloadSeason: (SeasonRef) -> Unit, onFavorite: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(
             Modifier.fillMaxWidth().height(390.dp)
@@ -1344,6 +1409,17 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             Spacer(Modifier.height(22.dp))
             if (!item?.versions.isNullOrEmpty()) {
                 MovieHubText("Télécharge une version pour la regarder hors connexion.", color = UiColors.muted, fontSize = 12.sp)
+            }
+            item?.seasons.orEmpty().forEach { season ->
+                OutlinedButton(
+                    onClick = { onDownloadSeason(season) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                ) {
+                    Icon(Icons.Default.Download, null)
+                    Spacer(Modifier.width(8.dp))
+                    MovieHubText("Télécharger " + season.title + " (" + season.episodeCount + " épisodes)")
+                }
             }
             if (!item?.versions.isNullOrEmpty()) {
                 Spacer(Modifier.height(12.dp))
@@ -1457,7 +1533,10 @@ private fun PlayerScreen(
     }
 }
 
-private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null) {
+private fun enqueuePrivateDownload(
+    context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null,
+    seriesFolder: String? = null, seasonNumber: Int? = null, episodeNumber: Int? = null, episodeTitle: String? = null
+) {
     val title = titleOverride ?: item?.title ?: "Film MovieHub"
     val request = OneTimeWorkRequestBuilder<PrivateDownloadWorker>()
         .setInputData(
@@ -1465,6 +1544,10 @@ private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: 
                 .putString("versionId", version.id)
                 .putString("title", title)
                 .putString("versionLabel", version.label)
+                .putString("seriesFolder", seriesFolder)
+                .putInt("seasonNumber", seasonNumber ?: 0)
+                .putInt("episodeNumber", episodeNumber ?: 0)
+                .putString("episodeTitle", episodeTitle)
                 .build()
         )
         .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
@@ -1490,8 +1573,47 @@ private fun DownloadsScreen(
     val scope = rememberCoroutineScope()
     val workInfos by WorkManager.getInstance(context).getWorkInfosByTagLiveData(PrivateDownloadWorker.TAG).observeAsState(emptyList())
     var transferMode by remember { mutableStateOf<String?>(null) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var localTransferServer by remember { mutableStateOf<LocalVideoTransferServer?>(null) }
+    var localTransferQr by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    DisposableEffect(localTransferServer) {
+        onDispose { localTransferServer?.close() }
+    }
+    val selectableFiles = buildMap<String, Pair<File, String>> {
+        importedVideos.forEach { put(it.file.absolutePath, it.file to it.title) }
+        workInfos.filter { it.state == WorkInfo.State.SUCCEEDED }.forEach { info ->
+            val path = info.outputData.getString("filePath")
+            val file = path?.let(::File)
+            if (file?.isFile == true) put(file.absolutePath, file to (info.outputData.getString("title") ?: file.nameWithoutExtension))
+        }
+    }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Header("Téléchargements")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            MovieHubText("Téléchargements", color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = { if (selectionMode) selectedPaths = emptySet(); selectionMode = !selectionMode }) {
+                MovieHubText(if (selectionMode) "Annuler" else "Sélectionner", color = UiColors.accent)
+            }
+        }
+        if (selectionMode) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                MovieHubText(selectedPaths.size.toString() + " sélectionné(s)", color = UiColors.muted, modifier = Modifier.weight(1f))
+                TextButton(enabled = selectedPaths.isNotEmpty(), onClick = {
+                    runCatching {
+                        localTransferServer?.close()
+                        val files = selectedPaths.mapNotNull { selectableFiles[it] }
+                        val server = LocalVideoTransferServer(files)
+                        localTransferServer = server
+                        localTransferQr = createLocalTransferQr(server.uri)
+                    }.onFailure {
+                        localTransferServer?.close()
+                        localTransferServer = null
+                        localTransferQr = null
+                        onTransferError(it.message ?: "Transfert local impossible.")
+                    }
+                }) { MovieHubText("Transfert direct", color = UiColors.accent) }
+            }
+        }
         MovieHubText("Ta bibliothèque hors connexion", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             listOf("Partager", "Recevoir").forEach { action ->
@@ -1525,7 +1647,14 @@ private fun DownloadsScreen(
                 items(importedVideos, key = { "shared-${it.file.absolutePath}" }) { video ->
                     Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            MovieHubText(video.title, color = UiColors.text, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                MovieHubText(video.title, color = UiColors.text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                if (selectionMode) Checkbox(
+                                    checked = video.file.absolutePath in selectedPaths,
+                                    onCheckedChange = { checked -> selectedPaths = if (checked) selectedPaths + video.file.absolutePath else selectedPaths - video.file.absolutePath },
+                                    colors = CheckboxDefaults.colors(checkedColor = UiColors.accent)
+                                )
+                            }
                             MovieHubText("Reçu depuis un autre appareil • stocké en privé", color = UiColors.muted, fontSize = 11.sp)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
@@ -1551,7 +1680,17 @@ private fun DownloadsScreen(
                     val percent = info.progress.getInt("progressPercent", if (info.state == WorkInfo.State.SUCCEEDED) 100 else 0)
                     Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            MovieHubText(title, color = UiColors.text, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                MovieHubText(title, color = UiColors.text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                if (selectionMode && info.state == WorkInfo.State.SUCCEEDED) {
+                                    val completedPath = info.outputData.getString("filePath")
+                                    if (completedPath != null) Checkbox(
+                                        checked = completedPath in selectedPaths,
+                                        onCheckedChange = { checked -> selectedPaths = if (checked) selectedPaths + completedPath else selectedPaths - completedPath },
+                                        colors = CheckboxDefaults.colors(checkedColor = UiColors.accent)
+                                    )
+                                }
+                            }
                             MovieHubText(label, color = UiColors.muted, fontSize = 12.sp)
                             when (info.state) {
                                 WorkInfo.State.RUNNING, WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
@@ -1603,7 +1742,13 @@ private fun DownloadsScreen(
                                     MovieHubText("En pause • fichier partiel conservé en privé", color = UiColors.muted, fontSize = 12.sp)
                                     val versionId = info.progress.getString("versionId")
                                     if (versionId != null) {
-                                        TextButton(onClick = { enqueuePrivateDownload(context, null, VideoVersion(versionId, label, null, null), title) }) {
+                                        TextButton(onClick = { enqueuePrivateDownload(
+                                            context, null, VideoVersion(versionId, label, null, null), title,
+                                            seriesFolder = info.progress.getString("seriesFolder"),
+                                            seasonNumber = info.progress.getInt("seasonNumber", 0).takeIf { it > 0 },
+                                            episodeNumber = info.progress.getInt("episodeNumber", 0).takeIf { it > 0 },
+                                            episodeTitle = info.progress.getString("episodeTitle")
+                                        ) }) {
                                             MovieHubText("Reprendre", color = UiColors.accent)
                                         }
                                     }
@@ -1615,15 +1760,34 @@ private fun DownloadsScreen(
                 }
             }
         }
+        if (localTransferQr != null) {
+            AlertDialog(
+                onDismissRequest = { localTransferQr = null; localTransferServer?.close(); localTransferServer = null },
+                title = { MovieHubText("Transfert MovieHub", color = UiColors.text, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Image(localTransferQr!!.asImageBitmap(), contentDescription = "QR code de transfert MovieHub", modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+                        MovieHubText("Sur l’autre téléphone, scanne ce QR avec l’appareil photo. MovieHub doit être installé et les deux téléphones connectés au même Wi-Fi.", color = UiColors.muted, fontSize = 12.sp)
+                        MovieHubText("Laisse cette fenêtre ouverte jusqu’à la fin du transfert.", color = UiColors.accent, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { localTransferQr = null; localTransferServer?.close(); localTransferServer = null }) {
+                        MovieHubText("Fermer", color = UiColors.accent)
+                    }
+                },
+                containerColor = UiColors.panel
+            )
+        }
         if (transferMode != null) {
             Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     MovieHubText(if (transferMode == "Partager") "Envoyer un téléchargement" else "Recevoir un fichier", color = UiColors.text, fontWeight = FontWeight.Bold)
                     MovieHubText(
                         if (transferMode == "Partager")
-                            "Utilise le bouton Partager d’une vidéo téléchargée. Android proposera Quick Share, Bluetooth ou les applications compatibles."
+                            "Pour envoyer plusieurs vidéos ensemble, active Sélectionner, coche les vidéos puis utilise Transfert direct. Les deux téléphones doivent être sur le même Wi-Fi."
                         else
-                            "Sur l’autre appareil, reçois la vidéo avec Quick Share, puis ouvre-la depuis les fichiers et choisis MovieHub. Elle sera copiée dans l’espace privé de l’application.",
+                            "Sur l’autre téléphone, scanne le QR de transfert avec l’appareil photo. MovieHub s’ouvrira et copiera les vidéos dans son stockage privé.",
                         color = UiColors.muted, fontSize = 12.sp
                     )
                     TextButton(onClick = { transferMode = null }) { MovieHubText("Fermer", color = UiColors.accent) }
