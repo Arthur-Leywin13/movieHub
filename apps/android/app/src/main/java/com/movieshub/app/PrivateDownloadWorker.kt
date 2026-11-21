@@ -146,6 +146,10 @@ class PrivateDownloadWorker(
         val versionId = inputData.getString("versionId") ?: return Result.failure()
         val title = inputData.getString("title") ?: "Film MovieHub"
         val label = inputData.getString("versionLabel") ?: "Vidéo"
+        val seriesFolder = inputData.getString("seriesFolder")?.takeIf { it.isNotBlank() }
+        val seasonNumber = inputData.getInt("seasonNumber", 0)
+        val episodeNumber = inputData.getInt("episodeNumber", 0)
+        val episodeTitle = inputData.getString("episodeTitle")?.takeIf { it.isNotBlank() }
         val dir = downloadDirectory()
         val partial = File(dir, "$versionId.part")
         val metadata = File(dir, "$versionId.json")
@@ -156,6 +160,10 @@ class PrivateDownloadWorker(
                 .putString("title", title)
                 .putString("versionLabel", label)
                 .putString("versionId", versionId)
+                .putString("seriesFolder", seriesFolder)
+                .putInt("seasonNumber", seasonNumber)
+                .putInt("episodeNumber", episodeNumber)
+                .putString("episodeTitle", episodeTitle)
                 .putInt("progressPercent", 0)
                 .build())
             setForeground(notification(0))
@@ -187,7 +195,16 @@ class PrivateDownloadWorker(
             metadata.writeText(JSONObject().put("downloadId", activeLink.id).put("filename", activeLink.filename).toString())
 
             val safeName = activeLink.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._ -]"), "_").take(150)
-            val output = File(dir, safeName.ifBlank { "$versionId.video" })
+            val outputDirectory = if (seriesFolder != null && seasonNumber > 0) {
+                val safeSeries = seriesFolder.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(80).ifBlank { "Série MovieHub" }
+                val seasonFolderName = "Saison " + seasonNumber.toString().padStart(2, '0')
+                File(File(dir, safeSeries), seasonFolderName).apply { mkdirs() }
+            } else dir
+            val episodePrefix = if (seriesFolder != null && seasonNumber > 0 && episodeNumber > 0) {
+                "S" + seasonNumber.toString().padStart(2, '0') + "E" + episodeNumber.toString().padStart(2, '0') +
+                    " - " + (episodeTitle ?: title).replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(90) + " - "
+            } else ""
+            val output = File(outputDirectory, episodePrefix + safeName.ifBlank { "$versionId.video" })
             val offset = if (partial.exists()) partial.length() else 0L
             var connection = (URL(activeLink.url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 20_000
