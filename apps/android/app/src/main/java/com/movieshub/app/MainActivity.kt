@@ -637,18 +637,22 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                                     if (series != null) scope.launch {
                                         runCatching { MoviesHubApi.episodes(season.id) }
                                             .onSuccess { episodes ->
+                                                var queued = 0
                                                 episodes.forEach { episode ->
                                                     val version = episode.versions.sortedByDescending { it.height ?: 0 }.firstOrNull()
-                                                    if (version != null) enqueuePrivateDownload(
-                                                        context, series, version,
-                                                        titleOverride = series.title + " • S" + season.number.toString().padStart(2, '0') + "E" + episode.number.toString().padStart(2, '0') + " • " + episode.title,
-                                                        seriesFolder = series.title,
-                                                        seasonNumber = season.number,
-                                                        episodeNumber = episode.number,
-                                                        episodeTitle = episode.title
-                                                    )
+                                                    if (version != null) {
+                                                        enqueuePrivateDownload(
+                                                            context, series, version,
+                                                            titleOverride = series.title + " • S" + season.number.toString().padStart(2, '0') + "E" + episode.number.toString().padStart(2, '0') + " • " + episode.title,
+                                                            seriesFolder = series.title,
+                                                            seasonNumber = season.number,
+                                                            episodeNumber = episode.number,
+                                                            episodeTitle = episode.title
+                                                        )
+                                                        queued++
+                                                    }
                                                 }
-                                                transferNotice = if (episodes.isEmpty()) "Aucun épisode publié à télécharger." else episodes.size.toString() + " épisode(s) ajoutés à la file de téléchargement."
+                                                transferNotice = if (queued == 0) "Aucun épisode publié avec une vidéo disponible." else queued.toString() + " épisode(s) ajoutés à la file de téléchargement."
                                             }
                                             .onFailure { transferNotice = it.message ?: "Impossible de charger les épisodes." }
                                     }
@@ -1776,9 +1780,9 @@ private fun DownloadsScreen(
                     MovieHubText(if (transferMode == "Partager") "Envoyer un téléchargement" else "Recevoir un fichier", color = UiColors.text, fontWeight = FontWeight.Bold)
                     MovieHubText(
                         if (transferMode == "Partager")
-                            "Utilise le bouton Partager d’une vidéo téléchargée. Android proposera Quick Share, Bluetooth ou les applications compatibles."
+                            "Pour envoyer plusieurs vidéos ensemble, active Sélectionner, coche les vidéos puis utilise Transfert direct. Les deux téléphones doivent être sur le même Wi-Fi."
                         else
-                            "Sur l’autre appareil, reçois la vidéo avec Quick Share, puis ouvre-la depuis les fichiers et choisis MovieHub. Elle sera copiée dans l’espace privé de l’application.",
+                            "Sur l’autre téléphone, scanne le QR de transfert avec l’appareil photo. MovieHub s’ouvrira et copiera les vidéos dans son stockage privé.",
                         color = UiColors.muted, fontSize = 12.sp
                     )
                     TextButton(onClick = { transferMode = null }) { MovieHubText("Fermer", color = UiColors.accent) }
