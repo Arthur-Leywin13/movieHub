@@ -123,7 +123,7 @@ class LocalVideoTransferServer(private val videos: List<Pair<File, String>>) : A
     }
 }
 
-fun localTransferQr(uri: String): Bitmap {
+fun createLocalTransferQr(uri: String): Bitmap {
     val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(
         uri, com.google.zxing.BarcodeFormat.QR_CODE, 640, 640
     )
