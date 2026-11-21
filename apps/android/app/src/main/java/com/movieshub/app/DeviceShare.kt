@@ -60,3 +60,25 @@ fun sharePrivateVideo(context: Context, file: File, title: String) {
     }
     context.startActivity(Intent.createChooser(send, "Partager avec un autre appareil"))
 }
+
+fun sharePrivateVideos(context: Context, videos: List<Pair<File, String>>) {
+    val readable = videos.filter { it.first.isFile && it.first.canRead() }
+    require(readable.isNotEmpty()) { "Aucune vidéo sélectionnée n’est disponible." }
+    if (readable.size == 1) {
+        sharePrivateVideo(context, readable.first().first, readable.first().second)
+        return
+    }
+    val uris = ArrayList<Uri>()
+    readable.forEach { (file, _) ->
+        uris += FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+    val clip = ClipData.newUri(context.contentResolver, readable.first().second, uris.first())
+    uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+    val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+        type = "video/*"
+        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        clipData = clip
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(send, "Partager les vidéos sélectionnées"))
+}
