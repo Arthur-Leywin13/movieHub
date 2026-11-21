@@ -1605,7 +1605,12 @@ private fun DownloadsScreen(
                         val server = LocalVideoTransferServer(files)
                         localTransferServer = server
                         localTransferQr = createLocalTransferQr(server.uri)
-                    }.onFailure { onTransferError(it.message ?: "Transfert local impossible.") }
+                    }.onFailure {
+                        localTransferServer?.close()
+                        localTransferServer = null
+                        localTransferQr = null
+                        onTransferError(it.message ?: "Transfert local impossible.")
+                    }
                 }) { MovieHubText("Transfert direct", color = UiColors.accent) }
             }
         }
