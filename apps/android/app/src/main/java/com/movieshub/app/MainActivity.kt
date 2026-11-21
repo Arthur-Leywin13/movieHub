@@ -1564,8 +1564,32 @@ private fun DownloadsScreen(
     val scope = rememberCoroutineScope()
     val workInfos by WorkManager.getInstance(context).getWorkInfosByTagLiveData(PrivateDownloadWorker.TAG).observeAsState(emptyList())
     var transferMode by remember { mutableStateOf<String?>(null) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val selectableFiles = buildMap<String, Pair<File, String>> {
+        importedVideos.forEach { put(it.file.absolutePath, it.file to it.title) }
+        workInfos.filter { it.state == WorkInfo.State.SUCCEEDED }.forEach { info ->
+            val path = info.outputData.getString("filePath")
+            val file = path?.let(::File)
+            if (file?.isFile == true) put(file.absolutePath, file to (info.outputData.getString("title") ?: file.nameWithoutExtension))
+        }
+    }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Header("Téléchargements")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            MovieHubText("Téléchargements", color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = { selectionMode = !selectionMode; if (!selectionMode) selectedPaths = emptySet() }) {
+                MovieHubText(if (selectionMode) "Annuler" else "Sélectionner", color = UiColors.accent)
+            }
+        }
+        if (selectionMode) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                MovieHubText(selectedPaths.size.toString() + " sélectionné(s)", color = UiColors.muted, modifier = Modifier.weight(1f))
+                TextButton(enabled = selectedPaths.isNotEmpty(), onClick = {
+                    runCatching { sharePrivateVideos(context, selectedPaths.mapNotNull { selectableFiles[it] }) }
+                        .onFailure { onTransferError(it.message ?: "Partage multiple impossible.") }
+                }) { MovieHubText("Partager", color = UiColors.accent) }
+            }
+        }
         MovieHubText("Ta bibliothèque hors connexion", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             listOf("Partager", "Recevoir").forEach { action ->
@@ -1599,7 +1623,14 @@ private fun DownloadsScreen(
                 items(importedVideos, key = { "shared-${it.file.absolutePath}" }) { video ->
                     Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            MovieHubText(video.title, color = UiColors.text, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                MovieHubText(video.title, color = UiColors.text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                if (selectionMode) Checkbox(
+                                    checked = video.file.absolutePath in selectedPaths,
+                                    onCheckedChange = { checked -> selectedPaths = if (checked) selectedPaths + video.file.absolutePath else selectedPaths - video.file.absolutePath },
+                                    colors = CheckboxDefaults.colors(checkedColor = UiColors.accent)
+                                )
+                            }
                             MovieHubText("Reçu depuis un autre appareil • stocké en privé", color = UiColors.muted, fontSize = 11.sp)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
@@ -1625,7 +1656,17 @@ private fun DownloadsScreen(
                     val percent = info.progress.getInt("progressPercent", if (info.state == WorkInfo.State.SUCCEEDED) 100 else 0)
                     Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            MovieHubText(title, color = UiColors.text, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                MovieHubText(title, color = UiColors.text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                if (selectionMode && info.state == WorkInfo.State.SUCCEEDED) {
+                                    val completedPath = info.outputData.getString("filePath")
+                                    if (completedPath != null) Checkbox(
+                                        checked = completedPath in selectedPaths,
+                                        onCheckedChange = { checked -> selectedPaths = if (checked) selectedPaths + completedPath else selectedPaths - completedPath },
+                                        colors = CheckboxDefaults.colors(checkedColor = UiColors.accent)
+                                    )
+                                }
+                            }
                             MovieHubText(label, color = UiColors.muted, fontSize = 12.sp)
                             when (info.state) {
                                 WorkInfo.State.RUNNING, WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
