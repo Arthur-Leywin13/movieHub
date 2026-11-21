@@ -1587,7 +1587,7 @@ private fun DownloadsScreen(
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             MovieHubText("Téléchargements", color = UiColors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { selectionMode = !selectionMode; if (!selectionMode) selectedPaths = emptySet() }) {
+            TextButton(onClick = { if (selectionMode) selectedPaths = emptySet(); selectionMode = !selectionMode }) {
                 MovieHubText(if (selectionMode) "Annuler" else "Sélectionner", color = UiColors.accent)
             }
         }
@@ -1600,7 +1600,7 @@ private fun DownloadsScreen(
                         val files = selectedPaths.mapNotNull { selectableFiles[it] }
                         val server = LocalVideoTransferServer(files)
                         localTransferServer = server
-                        localTransferQr = localTransferQr(server.uri)
+                        localTransferQr = createLocalTransferQr(server.uri)
                     }.onFailure { onTransferError(it.message ?: "Transfert local impossible.") }
                 }) { MovieHubText("Transfert direct", color = UiColors.accent) }
             }
