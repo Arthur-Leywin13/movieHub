@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -104,6 +105,7 @@ class MainActivity : ComponentActivity() {
     private fun extractIncomingVideo(source: Intent?): Uri? {
         val incoming = source ?: return null
         if (incoming.action != Intent.ACTION_SEND && incoming.action != Intent.ACTION_VIEW) return null
+        if (incoming.action == Intent.ACTION_VIEW && incoming.data?.scheme == "moviehub" && incoming.data?.host == "receive") return incoming.data
         val mime = incoming.type ?: return null
         if (!mime.startsWith("video/") && mime != "application/octet-stream") return null
         if (incoming.action == Intent.ACTION_VIEW) return incoming.data
@@ -461,10 +463,13 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
     LaunchedEffect(incomingShareUri) {
         val uri = incomingShareUri
         if (uri != null) {
-            runCatching { importSharedVideo(context, uri) }
-                .onSuccess {
+            runCatching {
+                if (uri.scheme == "moviehub") receiveMovieHubTransfer(context, uri)
+                else listOf(importSharedVideo(context, uri))
+            }
+                .onSuccess { received ->
                     importedVideos = listSharedVideos(context)
-                    transferNotice = "Vidéo reçue : ${it.title}"
+                    transferNotice = if (uri.scheme == "moviehub") received.size.toString() + " vidéo(s) reçue(s) en transfert local." else "Vidéo reçue : " + received.firstOrNull()?.title
                     screen = Screen.DOWNLOADS
                 }
                 .onFailure { transferNotice = it.message ?: "Réception impossible." }
@@ -1566,6 +1571,11 @@ private fun DownloadsScreen(
     var transferMode by remember { mutableStateOf<String?>(null) }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var localTransferServer by remember { mutableStateOf<LocalVideoTransferServer?>(null) }
+    var localTransferQr by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    DisposableEffect(localTransferServer) {
+        onDispose { localTransferServer?.close() }
+    }
     val selectableFiles = buildMap<String, Pair<File, String>> {
         importedVideos.forEach { put(it.file.absolutePath, it.file to it.title) }
         workInfos.filter { it.state == WorkInfo.State.SUCCEEDED }.forEach { info ->
@@ -1585,9 +1595,14 @@ private fun DownloadsScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 MovieHubText(selectedPaths.size.toString() + " sélectionné(s)", color = UiColors.muted, modifier = Modifier.weight(1f))
                 TextButton(enabled = selectedPaths.isNotEmpty(), onClick = {
-                    runCatching { sharePrivateVideos(context, selectedPaths.mapNotNull { selectableFiles[it] }) }
-                        .onFailure { onTransferError(it.message ?: "Partage multiple impossible.") }
-                }) { MovieHubText("Partager", color = UiColors.accent) }
+                    runCatching {
+                        localTransferServer?.close()
+                        val files = selectedPaths.mapNotNull { selectableFiles[it] }
+                        val server = LocalVideoTransferServer(files)
+                        localTransferServer = server
+                        localTransferQr = localTransferQr(server.uri)
+                    }.onFailure { onTransferError(it.message ?: "Transfert local impossible.") }
+                }) { MovieHubText("Transfert direct", color = UiColors.accent) }
             }
         }
         MovieHubText("Ta bibliothèque hors connexion", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp))
@@ -1735,6 +1750,25 @@ private fun DownloadsScreen(
                     }
                 }
             }
+        }
+        if (localTransferQr != null) {
+            AlertDialog(
+                onDismissRequest = { localTransferQr = null; localTransferServer?.close(); localTransferServer = null },
+                title = { MovieHubText("Transfert MovieHub", color = UiColors.text, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Image(localTransferQr!!.asImageBitmap(), contentDescription = "QR code de transfert MovieHub", modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+                        MovieHubText("Sur l’autre téléphone, scanne ce QR avec l’appareil photo. MovieHub doit être installé et les deux téléphones connectés au même Wi-Fi.", color = UiColors.muted, fontSize = 12.sp)
+                        MovieHubText("Laisse cette fenêtre ouverte jusqu’à la fin du transfert.", color = UiColors.accent, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { localTransferQr = null; localTransferServer?.close(); localTransferServer = null }) {
+                        MovieHubText("Fermer", color = UiColors.accent)
+                    }
+                },
+                containerColor = UiColors.panel
+            )
         }
         if (transferMode != null) {
             Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
