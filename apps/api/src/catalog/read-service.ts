@@ -112,7 +112,7 @@ export class CatalogReadService {
     ]);
     return {
       newReleases: await Promise.all(releases.items.map((c) => this.card(c))),
-      newSeasons: seasons.map((x) => ({ content: this.card(x.content), season: { id: x.season.id, number: x.season.number, title: x.season.title, releaseDate: x.season.releaseDate } })),
+      newSeasons: await Promise.all(seasons.map(async (x) => ({ content: await this.card(x.content), season: { id: x.season.id, number: x.season.number, title: x.season.title, releaseDate: x.season.releaseDate } }))),
       trending,
       upcoming: upcoming.items,
     };
@@ -199,7 +199,7 @@ export class CatalogReadService {
       },
       { page: f.page, limit: f.limit },
     );
-    return { items: page.items.map((c) => this.card(c)), total: page.total, page: page.page, limit: page.limit };
+    return { items: await Promise.all(page.items.map((c) => this.card(c))), total: page.total, page: page.page, limit: page.limit };
   }
 
   genres() { return this.repo.listGenres(); }
