@@ -11,6 +11,8 @@ import type { CatalogAdminService } from './catalog/admin-service.ts';
 import type { CatalogReadService } from './catalog/read-service.ts';
 import { registerCatalogRoutes } from './catalog/routes.ts';
 import type { UserDataService } from './user/service.ts';
+import type { CloudTransferService } from './user/cloud-transfer-service.ts';
+import { MAX_CLOUD_TRANSFER_BYTES } from './user/cloud-transfer-service.ts';
 import { registerUserRoutes } from './user/routes.ts';
 import type { ScheduledPublicationService } from './scheduler/service.ts';
 import { registerScheduledPublicationRoutes } from './scheduler/routes.ts';
@@ -27,6 +29,8 @@ export interface AppDeps {
   catalogRead: CatalogReadService;
   /** Favoris, suivi, historique, téléchargements : routes « /me » et téléchargements, absentes si non fourni. */
   userData?: UserDataService;
+  /** Transfert de fichiers privés via liens temporaires de stockage. */
+  cloudTransfers?: CloudTransferService;
   /** File de publications programmées, partagée entre dashboard et bot. */
   scheduledPublications?: ScheduledPublicationService;
   /** Notifications internes et campagnes administrateur. */
@@ -59,6 +63,37 @@ export function buildApp(deps: AppDeps): Router {
     const ready = deps.checkReady ? await deps.checkReady().catch(() => false) : true;
     return ready ? { status: 200, body: { status: 'ready' } } : { status: 503, body: { status: 'unavailable' } };
   });
+
+  // ---- Transfert cloud temporaire ----
+  const cloudTransfers = deps.cloudTransfers;
+  if (cloudTransfers) {
+    on('POST', '/me/transfers', async (req) => {
+      const actor = await deps.actors.user(req);
+      const b = asObject(req.body);
+      return { status: 201, body: await cloudTransfers.init(actor.userId, {
+        filename: str(b, 'filename', { max: 255 }),
+        sizeBytes: int(b, 'sizeBytes', { min: 1, max: MAX_CLOUD_TRANSFER_BYTES }),
+      }) };
+    });
+    on('POST', '/me/transfers/:id/complete', async (req) => {
+      const actor = await deps.actors.user(req);
+      const b = asObject(req.body);
+      return { status: 200, body: await cloudTransfers.complete(actor.userId, uuidParam(req.params['id']), {
+        filename: str(b, 'filename', { max: 255 }),
+        sizeBytes: int(b, 'sizeBytes', { min: 1, max: MAX_CLOUD_TRANSFER_BYTES }),
+      }) };
+    });
+    on('POST', '/me/transfers/:id/share', async (req) => {
+      const actor = await deps.actors.user(req);
+      const b = asObject(req.body);
+      return { status: 200, body: await cloudTransfers.share(actor.userId, uuidParam(req.params['id']), str(b, 'filename', { max: 255 })) };
+    });
+    on('DELETE', '/me/transfers/:id', async (req) => {
+      const actor = await deps.actors.user(req);
+      await cloudTransfers.remove(actor.userId, uuidParam(req.params['id']));
+      return { status: 204 };
+    });
+  }
 
   // ---- Authentification ----
   on('POST', '/auth/register', async (req) => {

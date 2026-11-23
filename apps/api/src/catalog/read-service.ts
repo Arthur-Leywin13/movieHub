@@ -7,7 +7,7 @@ import type { StatRow } from '../user/ports.ts';
 import { daysAgo, isoDay, parseWeights, rankTrending } from './trending.ts';
 
 export interface UrlSigner {
-  presignGet(key: string, expiresSeconds: number, opts?: { downloadName?: string }): string;
+  presignGet(key: string, expiresSeconds: number, opts?: { downloadName?: string }): string | Promise<string>;
 }
 
 /** Compteurs d'usage et réglages nécessaires aux tendances (facultatif : sans lui, pas de tendances). */
@@ -35,15 +35,15 @@ export class CatalogReadService {
     this.now = deps.now ?? (() => new Date());
   }
 
-  private url(key: string | null): string | null {
-    return key ? this.signer.presignGet(key, this.imageTtl) : null;
+  private async url(key: string | null): Promise<string | null> {
+    return key ? await this.signer.presignGet(key, this.imageTtl) : null;
   }
 
-  private card(c: ContentListItem) {
+  private async card(c: ContentListItem) {
     return {
       id: c.id, slug: c.slug, type: c.type, title: c.title, year: c.year, releaseDate: c.releaseDate,
       genres: c.genres.map((g) => g.name), audioLanguages: c.audioLanguages, subtitleLanguages: c.subtitleLanguages,
-      posterUrl: this.url(c.posterKey),
+      posterUrl: await this.url(c.posterKey),
     };
   }
 
@@ -57,7 +57,7 @@ export class CatalogReadService {
       { page: q.page, limit: q.limit },
       q.sort ?? 'new',
     );
-    return { items: page.items.map((c) => this.card(c)), total: page.total, page: page.page, limit: page.limit } satisfies Page<unknown>;
+    return { items: await Promise.all(page.items.map((c) => this.card(c))), total: page.total, page: page.page, limit: page.limit } satisfies Page<unknown>;
   }
 
   private versionView(v: VersionRecord) {
@@ -69,12 +69,12 @@ export class CatalogReadService {
     };
   }
 
-  private trailerView(t: TrailerRecord) {
-    return { id: t.id, title: t.title, external: t.externalUrl !== null, url: t.externalUrl ?? this.url(t.objectKey) };
+  private async trailerView(t: TrailerRecord) {
+    return { id: t.id, title: t.title, external: t.externalUrl !== null, url: t.externalUrl ?? await this.url(t.objectKey) };
   }
 
-  private posterView(p: PosterRecord) {
-    return { id: p.id, kind: p.kind, url: this.url(p.objectKey) };
+  private async posterView(p: PosterRecord) {
+    return { id: p.id, kind: p.kind, url: await this.url(p.objectKey) };
   }
 
   /** Contenu visible publiquement (par identifiant ou slug) ; retiré = 410, non publié = 404. */
@@ -84,7 +84,7 @@ export class CatalogReadService {
 
   /** Cartes des contenus publiés parmi `ids`, dans l'ordre demandé. */
   async cardsByIds(ids: string[]) {
-    return (await this.repo.listContentsByIds(ids)).filter((c) => c.status === 'PUBLISHED').map((c) => this.card(c));
+    return Promise.all((await this.repo.listContentsByIds(ids)).filter((c) => c.status === 'PUBLISHED').map((c) => this.card(c)));
   }
 
   /** Tendances : usage récent pondéré (réglage « trending »), sans bonus de nouveauté. */
@@ -98,7 +98,7 @@ export class CatalogReadService {
   /** À venir : contenus publiés dont la date de sortie officielle est dans le futur, les plus proches d'abord. */
   async upcoming(page: number, limit: number) {
     const res = await this.repo.listContents({ onlyPublished: true, releasingAfter: isoDay(this.now()) }, { page, limit }, 'soonest');
-    return { items: res.items.map((c) => this.card(c)), total: res.total, page: res.page, limit: res.limit };
+    return { items: await Promise.all(res.items.map((c) => this.card(c))), total: res.total, page: res.page, limit: res.limit };
   }
 
   /** Accueil : nouveautés (date de sortie officielle), nouvelles saisons de l'année, tendances, à venir. */
@@ -111,8 +111,8 @@ export class CatalogReadService {
       this.trending(12),
     ]);
     return {
-      newReleases: releases.items.map((c) => this.card(c)),
-      newSeasons: seasons.map((x) => ({ content: this.card(x.content), season: { id: x.season.id, number: x.season.number, title: x.season.title, releaseDate: x.season.releaseDate } })),
+      newReleases: await Promise.all(releases.items.map((c) => this.card(c))),
+      newSeasons: await Promise.all(seasons.map(async (x) => ({ content: await this.card(x.content), season: { id: x.season.id, number: x.season.number, title: x.season.title, releaseDate: x.season.releaseDate } }))),
       trending,
       upcoming: upcoming.items,
     };
@@ -126,9 +126,9 @@ export class CatalogReadService {
     return c;
   }
 
-  private publishedSeasonTrailer(trailers: TrailerRecord[], s: SeasonRecord) {
+  private async publishedSeasonTrailer(trailers: TrailerRecord[], s: SeasonRecord) {
     const t = trailers.find((x) => x.id === s.primaryTrailerId && !x.archivedAt);
-    return t ? this.trailerView(t) : null;
+    return t ? await this.trailerView(t) : null;
   }
 
   async detail(slugOrId: string) {
@@ -142,10 +142,10 @@ export class CatalogReadService {
     const base = {
       id: c.id, slug: c.slug, type: c.type, title: c.title, altTitles: c.altTitles, description: c.description, year: c.year,
       releaseDate: c.releaseDate, genres: c.genres.map((g) => g.name), audioLanguages: c.audioLanguages, subtitleLanguages: c.subtitleLanguages,
-      poster: primary ? this.posterView(primary) : null,
-      images: posters.filter((p) => p.id !== c.primaryPosterId).map((p) => this.posterView(p)),
-      trailer: mainTrailer ? this.trailerView(mainTrailer) : null,
-      otherTrailers: contentTrailers.filter((t) => t.id !== c.primaryTrailerId).map((t) => this.trailerView(t)),
+      poster: primary ? await this.posterView(primary) : null,
+      images: await Promise.all(posters.filter((p) => p.id !== c.primaryPosterId).map((p) => this.posterView(p))),
+      trailer: mainTrailer ? await this.trailerView(mainTrailer) : null,
+      otherTrailers: await Promise.all(contentTrailers.filter((t) => t.id !== c.primaryTrailerId).map((t) => this.trailerView(t))),
     };
 
     if (c.type === 'MOVIE') {
@@ -163,7 +163,7 @@ export class CatalogReadService {
       }
       seasonViews.push({
         id: s.id, number: s.number, title: s.title, description: s.description, releaseDate: s.releaseDate,
-        featuredAsNewSeason: s.featuredAsNewSeason, episodeCount: episodes.length, trailer: this.publishedSeasonTrailer(trailers, s),
+        featuredAsNewSeason: s.featuredAsNewSeason, episodeCount: episodes.length, trailer: await this.publishedSeasonTrailer(trailers, s),
       });
     }
     return { ...base, available, seasons: seasonViews };
@@ -199,7 +199,7 @@ export class CatalogReadService {
       },
       { page: f.page, limit: f.limit },
     );
-    return { items: page.items.map((c) => this.card(c)), total: page.total, page: page.page, limit: page.limit };
+    return { items: await Promise.all(page.items.map((c) => this.card(c))), total: page.total, page: page.page, limit: page.limit };
   }
 
   genres() { return this.repo.listGenres(); }

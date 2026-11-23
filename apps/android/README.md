@@ -12,12 +12,20 @@ Ouvre le dossier `apps/android` dans Android Studio, puis laisse Gradle synchron
 
 ## Connexion à l'API
 
-L'URL de développement est définie dans `app/build.gradle.kts` :
+L'URL de l'API est configurable avec la propriété Gradle `movieshubApiBaseUrl` :
 
-- Émulateur Android : `http://10.0.2.2:3000`
-- Téléphone physique : remplace cette valeur par l'adresse IP locale de l'ordinateur qui exécute l'API.
+- Émulateur Android par défaut : `http://10.0.2.2:3000`
+- API déployée sur Railway : utilise son domaine HTTPS public.
+
+Exemple depuis `apps/android` : `./gradlew :app:assembleDebug -PmovieshubApiBaseUrl=https://TON-DOMAINE-API.up.railway.app`
 
 L'API doit être démarrée et accessible depuis l'appareil. Le manifeste autorise HTTP en développement ; utilise HTTPS et désactive le trafic en clair avant une publication.
+
+## Test de transfert cloud
+
+Dans Téléchargements, ouvre **Transfert cloud (test)**. Connecte-toi, choisis une vidéo de 40 Mio maximum, puis partage le lien généré. Sur le deuxième appareil, connecte-toi au même backend, colle le lien et lance la réception. Le fichier reçu est placé dans `downloads/shared`, dans l'espace privé de l'application.
+
+Le transfert utilise le fournisseur configuré par l'API (`TRANSFER_STORAGE_PROVIDER`). Les URL de partage sont temporaires ; ce parcours de test ne reprend pas encore un upload interrompu.
 
 ## État de cette étape
 

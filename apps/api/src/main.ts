@@ -13,12 +13,14 @@ import { createHttpServer } from './http/server.ts';
 import { consoleLogger } from './http/types.ts';
 import { PrismaAdminRepo, PrismaAuditRepo, PrismaMediaFileRepo, PrismaSessionRepo, PrismaUserRepo } from './infra/prisma-repos.ts';
 import { R2Client } from './storage/r2-client.ts';
+import { SupabaseStorageClient } from './storage/supabase-client.ts';
 import { bootstrapAdmin } from './bootstrap.ts';
 import { CatalogAdminService } from './catalog/admin-service.ts';
 import { CatalogReadService } from './catalog/read-service.ts';
 import { PrismaCatalogRepo } from './infra/prisma-catalog-repo.ts';
 import { PrismaUserDataRepo } from './infra/prisma-user-data-repo.ts';
 import { UserDataService } from './user/service.ts';
+import { CloudTransferService } from './user/cloud-transfer-service.ts';
 import { ScheduledPublicationService } from './scheduler/service.ts';
 import { NotificationService } from './notifications/service.ts';
 import { ContentWithdrawalService } from './withdrawals/service.ts';
@@ -56,12 +58,20 @@ async function main(): Promise<void> {
     { accessSecret: env.jwtAccessSecret, refreshPepper: env.jwtRefreshSecret },
   );
   const actors = new ActorResolver({ auth, admins, botServiceToken: env.botServiceToken });
+  // R2 remains the permanent media/catalog provider. Supabase is selectable only for user cloud transfers.
   const r2 = new R2Client({
     accountId: env.r2.accountId,
     accessKeyId: env.r2.accessKeyId,
     secretAccessKey: env.r2.secretAccessKey,
     bucket: env.r2.bucket,
   });
+  const transferStorage = env.transferStorageProvider === 'supabase'
+    ? new SupabaseStorageClient({
+        projectUrl: env.supabase.projectUrl,
+        serviceRoleKey: env.supabase.serviceRoleKey,
+        bucket: env.supabase.bucket,
+      })
+    : r2;
   const media = new PrismaMediaFileRepo(prisma);
   const audit = new PrismaAuditRepo(prisma);
   const uploads = new UploadService({ r2, media, audit, bucket: env.r2.bucket });
@@ -70,6 +80,11 @@ async function main(): Promise<void> {
   const userDataRepo = new PrismaUserDataRepo(prisma);
   const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: r2, stats: userDataRepo });
   const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: r2, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
+  const cloudTransfers = new CloudTransferService({
+    storage: transferStorage,
+    uploadTtlSeconds: env.transferStorageProvider === 'supabase' ? 2 * 3600 : 6 * 3600,
+    downloadTtlSeconds: env.r2.signedUrlTtlSeconds,
+  });
   const scheduledPublications = new ScheduledPublicationService({ prisma });
   const notifications = new NotificationService({ prisma });
   const contentWithdrawals = new ContentWithdrawalService({ prisma });
@@ -82,6 +97,7 @@ async function main(): Promise<void> {
     catalogAdmin,
     catalogRead,
     userData,
+    cloudTransfers,
     scheduledPublications,
     notifications,
     contentWithdrawals,
