@@ -574,6 +574,7 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                         )
                         Screen.SEARCH -> SearchScreen(
                             query = searchText,
+                            language = appLanguage ?: "fr",
                             onQuery = { searchText = it },
                             onSelect = {
                                 selected = it
@@ -1199,7 +1200,7 @@ private fun CategoriesScreen(
 }
 
 @Composable
-private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (MediaItem) -> Unit) {
+private fun SearchScreen(query: String, language: String, onQuery: (String) -> Unit, onSelect: (MediaItem) -> Unit) {
     var results by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -1266,7 +1267,14 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
                 EmptyMessage(error!!)
             }
             results.isEmpty() -> {
-                EmptyMessage("Aucun résultat pour « ${query.trim()} ». Essaie un autre titre.")
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    EmptyMessage("Aucun résultat pour « ${query.trim()} ».")
+                    SocialSuggestion(language)
+                }
             }
             else -> {
                 MovieHubText(
@@ -1660,7 +1668,7 @@ private fun ShareScreen() {
 
 @Composable
 private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavorites: () -> Unit, onHistory: () -> Unit, onLogout: () -> Unit, onSettings: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Header("Profil")
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1713,6 +1721,8 @@ private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavo
             }
             HorizontalDivider(color = Color(0xFF242932))
         }
+        Spacer(Modifier.height(16.dp))
+        SocialLinksSection()
     }
 }
 
@@ -1800,6 +1810,65 @@ private fun EmptyMessage(message: String) {
     MovieHubText(message, color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(22.dp))
 }
 
+private const val MOVIEHUB_INSTAGRAM_URL = "https://www.instagram.com/movie_x199?hvrq=dmp3bDJyZmd0dXll"
+
+@Composable
+private fun SocialLinksSection() {
+    val context = LocalContext.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = UiColors.panel),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            MovieHubText("Nos réseaux sociaux", color = UiColors.text, fontWeight = FontWeight.SemiBold)
+            MovieHubText("Retrouve MovieHub sur Instagram pour suivre nos actualités et nous contacter.", color = UiColors.muted, fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(MOVIEHUB_INSTAGRAM_URL)))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+            ) {
+                Icon(Icons.Default.CameraAlt, null)
+                Spacer(Modifier.width(8.dp))
+                MovieHubText("@movie_x199 · Instagram")
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Default.OpenInNew, null)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SocialSuggestion(language: String) {
+    val context = LocalContext.current
+    val copy = when (language.lowercase()) {
+        "en" -> Triple("Didn't find your title?", "Suggest the movie or series to us on Instagram. We'll take a look at your request.", "Suggest a title")
+        "es" -> Triple("¿No encontraste el título?", "Sugiere la película o serie en Instagram. Revisaremos tu solicitud.", "Sugerir un título")
+        "ht" -> Triple("Ou pa jwenn tit la?", "Voye non fim oswa seri a ban nou sou Instagram. N ap gade demann ou an.", "Pwopoze yon tit")
+        else -> Triple("Tu n’as pas trouvé ton titre ?", "Propose le film ou la série sur Instagram. Nous examinerons ta demande.", "Proposer un titre")
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = UiColors.panel),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)
+    ) {
+        Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Campaign, null, tint = UiColors.accent, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.height(8.dp))
+            MovieHubText(copy.first, color = UiColors.text, fontWeight = FontWeight.Bold)
+            MovieHubText(copy.second, color = UiColors.muted, fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(MOVIEHUB_INSTAGRAM_URL))) },
+                colors = ButtonDefaults.buttonColors(containerColor = UiColors.accent, contentColor = UiColors.background)
+            ) {
+                MovieHubText(copy.third)
+            }
+        }
+    }
+}
+
 @Composable
 private fun SettingsScreen(
     themeMode: String,
@@ -1858,5 +1927,7 @@ private fun SettingsScreen(
         }
         Spacer(Modifier.height(18.dp))
         MovieHubText("Les préférences sont enregistrées sur cet appareil.", color = UiColors.muted, fontSize = 11.sp)
+        Spacer(Modifier.height(22.dp))
+        SocialLinksSection()
     }
 }
