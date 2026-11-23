@@ -165,7 +165,7 @@ private object SecureSessionStore {
 
 internal data class Genre(val slug: String, val name: String)
 
-private data class VideoVersion(
+internal data class VideoVersion(
     val id: String,
     val label: String,
     val height: Int?,
