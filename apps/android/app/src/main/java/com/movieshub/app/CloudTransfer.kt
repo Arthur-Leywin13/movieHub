@@ -105,7 +105,7 @@ fun CloudTransferDialog(
         title = { Text("Transfert cloud · test") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Envoie une vidéo via Supabase/R2 puis partage un lien temporaire. Limite de test : 50 Mio.")
+                Text("Envoie une vidéo via Supabase/R2 puis partage un lien temporaire. Limite de test : 40 Mio.")
                 if (session == null) {
                     Text("Une session MovieHub est nécessaire pour envoyer.")
                     Button(onClick = onLogin, modifier = Modifier.fillMaxWidth(), enabled = !busy) {
@@ -236,7 +236,7 @@ private suspend fun downloadCloudFile(context: Context, rawUrl: String): SharedV
         val code = connection.responseCode
         if (code !in 200..299) error("Lien expiré ou fichier inaccessible (HTTP $code).")
         val length = connection.contentLengthLong
-        require(length <= CLOUD_TRANSFER_MAX_BYTES) { "Le fichier dépasse la limite de test de 50 Mio." }
+        require(length <= CLOUD_TRANSFER_MAX_BYTES) { "Le fichier dépasse la limite de test de 40 Mio." }
         val disposition = connection.getHeaderField("Content-Disposition").orEmpty()
         val headerName = Regex("filename\*=UTF-8''([^;]+)|filename=\"?([^;\"\\r\\n]+)").find(disposition)
         val queryName = url.query.orEmpty().split('&').firstOrNull { it.startsWith("download=") }?.substringAfter('=')
@@ -258,7 +258,7 @@ private suspend fun downloadCloudFile(context: Context, rawUrl: String): SharedV
                     val count = input.read(buffer)
                     if (count < 0) break
                     total += count
-                    require(total <= CLOUD_TRANSFER_MAX_BYTES) { "Le fichier dépasse la limite de test de 50 Mio." }
+                    require(total <= CLOUD_TRANSFER_MAX_BYTES) { "Le fichier dépasse la limite de test de 40 Mio." }
                     output.write(buffer, 0, count)
                 }
             }
