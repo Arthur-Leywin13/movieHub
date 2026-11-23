@@ -752,7 +752,7 @@ private fun LanguageSelectionScreen(onSelect: (String) -> Unit) {
     ) {
         Image(
             painter = painterResource(id = R.drawable.moviehub_logo),
-            contentDescription = "MovieHub",
+            contentDescription = "Movie X",
             modifier = Modifier.size(116.dp),
             contentScale = ContentScale.Fit
         )
@@ -790,7 +790,7 @@ private fun SplashScreen() {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Image(
                 painter = painterResource(id = R.drawable.moviehub_logo),
-                contentDescription = "Logo MovieHub",
+                contentDescription = "Logo Movie X",
                 modifier = Modifier.size(132.dp),
                 contentScale = ContentScale.Fit
             )
@@ -831,7 +831,7 @@ private fun BottomNavigationBar(screen: Screen, onNavigate: (Screen) -> Unit) {
 private fun Header(title: String = "MoviesHub", onCategories: (() -> Unit)? = null, onSearch: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         if (title == "MoviesHub") {
-            Image(painterResource(R.drawable.moviehub_logo), contentDescription = "Logo MovieHub", modifier = Modifier.size(38.dp), contentScale = ContentScale.Fit)
+            Image(painterResource(R.drawable.moviehub_logo), contentDescription = "Logo Movie X", modifier = Modifier.size(38.dp), contentScale = ContentScale.Fit)
             Spacer(Modifier.width(10.dp))
         }
         MovieHubText(title, color = UiColors.accent, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -877,7 +877,7 @@ private fun HomeScreen(
             ) {
                 Image(
                     painterResource(R.drawable.moviehub_logo),
-                    contentDescription = "Logo MovieHub",
+                    contentDescription = "Logo Movie X",
                     modifier = Modifier.size(42.dp),
                     contentScale = ContentScale.Fit
                 )
@@ -953,7 +953,7 @@ private fun HomeScreen(
                             fontSize = 12.sp
                         )
                         MovieHubText(
-                            featured.description.ifBlank { "Retrouve ce contenu dans le catalogue MovieHub." },
+                            featured.description.ifBlank { "Retrouve ce contenu dans le catalogue Movie X." },
                             color = Color.White.copy(alpha = .78f),
                             fontSize = 12.sp,
                             maxLines = 2,
@@ -1190,7 +1190,7 @@ private fun CategoriesScreen(
                 TextButton(onClick = onClearFilter) { MovieHubText("Toutes", color = UiColors.accent) }
             }
             if (loading) LinearProgressIndicator(color = UiColors.accent, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-            if (!loading && media.isEmpty()) EmptyMessage("Aucun résultat pour cette catégorie pour le moment.")
+            if (!loading && media.isEmpty()) EmptyMessage("Aucun résultat pour cette catégorie pour le moment.", showSocialLinks = true)
             LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
                 items(media) { item -> MediaPoster(item) { onSelect(item) } }
             }
@@ -1266,7 +1266,7 @@ private fun SearchScreen(query: String, onQuery: (String) -> Unit, onSelect: (Me
                 EmptyMessage(error!!)
             }
             results.isEmpty() -> {
-                EmptyMessage("Aucun résultat pour « ${query.trim()} ». Essaie un autre titre.")
+                EmptyMessage("Aucun résultat pour « ${query.trim()} ». Essaie un autre titre.", showSocialLinks = true)
             }
             else -> {
                 MovieHubText(
@@ -1338,7 +1338,7 @@ private fun DetailScreen(item: MediaItem?, loading: Boolean, isFavorite: Boolean
             Spacer(Modifier.height(8.dp))
             MovieHubText(
                 item?.description?.ifBlank { "La description sera affichée à partir des métadonnées du catalogue." }
-                    ?: "Les informations du contenu seront chargées depuis MovieHub.",
+                    ?: "Les informations du contenu seront chargées depuis Movie X.",
                 color = UiColors.muted, fontSize = 13.sp, lineHeight = 20.sp
             )
             Spacer(Modifier.height(22.dp))
@@ -1458,7 +1458,7 @@ private fun PlayerScreen(
 }
 
 private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: VideoVersion, titleOverride: String? = null) {
-    val title = titleOverride ?: item?.title ?: "Film MovieHub"
+    val title = titleOverride ?: item?.title ?: "Film Movie X"
     val request = OneTimeWorkRequestBuilder<PrivateDownloadWorker>()
         .setInputData(
             Data.Builder()
@@ -1517,7 +1517,7 @@ private fun DownloadsScreen(
                     Spacer(Modifier.height(14.dp))
                     MovieHubText("Aucun téléchargement", color = UiColors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     MovieHubText("Les vidéos enregistrées apparaîtront ici.", color = UiColors.muted, fontSize = 13.sp)
-                    MovieHubText("Les fichiers terminés restent dans l’espace privé de MovieHub, invisibles dans la galerie publique.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                    MovieHubText("Les fichiers terminés restent dans l’espace privé de Movie X, invisibles dans la galerie publique.", color = UiColors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
                 }
             }
         } else {
@@ -1546,7 +1546,7 @@ private fun DownloadsScreen(
                     }
                 }
                 items(workInfos, key = { it.id }) { info ->
-                    val title = info.outputData.getString("title") ?: info.progress.getString("title") ?: "Téléchargement MovieHub"
+                    val title = info.outputData.getString("title") ?: info.progress.getString("title") ?: "Téléchargement Movie X"
                     val label = info.outputData.getString("versionLabel") ?: info.progress.getString("versionLabel") ?: "Vidéo"
                     val percent = info.progress.getInt("progressPercent", if (info.state == WorkInfo.State.SUCCEEDED) 100 else 0)
                     Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
@@ -1623,7 +1623,7 @@ private fun DownloadsScreen(
                         if (transferMode == "Partager")
                             "Utilise le bouton Partager d’une vidéo téléchargée. Android proposera Quick Share, Bluetooth ou les applications compatibles."
                         else
-                            "Sur l’autre appareil, reçois la vidéo avec Quick Share, puis ouvre-la depuis les fichiers et choisis MovieHub. Elle sera copiée dans l’espace privé de l’application.",
+                            "Sur l’autre appareil, reçois la vidéo avec Quick Share, puis ouvre-la depuis les fichiers et choisis Movie X. Elle sera copiée dans l’espace privé de l’application.",
                         color = UiColors.muted, fontSize = 12.sp
                     )
                     TextButton(onClick = { transferMode = null }) { MovieHubText("Fermer", color = UiColors.accent) }
@@ -1665,7 +1665,7 @@ private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavo
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.AccountCircle, null, tint = UiColors.accent, modifier = Modifier.size(76.dp))
-                MovieHubText(session?.user?.displayName ?: "Bienvenue sur MovieHub", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                MovieHubText(session?.user?.displayName ?: "Bienvenue sur Movie X", color = UiColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 MovieHubText(session?.user?.email ?: "Connecte-toi pour synchroniser tes favoris et ton historique.", color = UiColors.muted, fontSize = 12.sp)
                 if (session == null) {
                     Spacer(Modifier.height(12.dp))
@@ -1706,6 +1706,9 @@ private fun ProfileScreen(session: AuthSessionData?, onLogin: () -> Unit, onFavo
             Icon(Icons.Default.ChevronRight, null, tint = UiColors.accent)
         }
         HorizontalDivider(color = Color(0xFF242932))
+        Spacer(Modifier.height(12.dp))
+        SocialLinksSection()
+        Spacer(Modifier.height(12.dp))
         listOf("Aide & support", "À propos").forEach { label ->
             Row(Modifier.fillMaxWidth().clickable {}.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 MovieHubText(label, color = UiColors.text, modifier = Modifier.weight(1f))
@@ -1764,7 +1767,7 @@ private fun AuthScreen(
         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Retour", tint = UiColors.text) }
         Spacer(Modifier.height(18.dp))
         MovieHubText(if (register) "Créer un compte" else "Bienvenue", color = UiColors.text, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
-        MovieHubText(if (register) "Rejoins MovieHub pour retrouver tes contenus." else "Connecte-toi pour synchroniser ton profil.", color = UiColors.muted, fontSize = 13.sp)
+        MovieHubText(if (register) "Rejoins Movie X pour retrouver tes contenus." else "Connecte-toi pour synchroniser ton profil.", color = UiColors.muted, fontSize = 13.sp)
         Spacer(Modifier.height(24.dp))
         if (register) {
             OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { MovieHubText("Nom affiché") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -1796,8 +1799,64 @@ private fun AuthScreen(
 }
 
 @Composable
-private fun EmptyMessage(message: String) {
-    MovieHubText(message, color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(22.dp))
+private fun EmptyMessage(message: String, showSocialLinks: Boolean = false) {
+    Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        MovieHubText(message, color = UiColors.muted, fontSize = 13.sp)
+        if (showSocialLinks) {
+            MovieHubText("Tu ne trouves pas le titre recherché ? Propose-le-nous sur nos réseaux sociaux.", color = UiColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            SocialLinksSection(compact = true)
+        }
+    }
+}
+
+@Composable
+private fun SocialLinksSection(compact: Boolean = false) {
+    val context = LocalContext.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = UiColors.panel),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            Modifier.padding(if (compact) 10.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MovieHubText("Nos réseaux sociaux", color = UiColors.text, fontWeight = FontWeight.SemiBold)
+            if (!compact) {
+                MovieHubText("Suis Movie X pour les actualités et pour nous proposer des films ou des séries.", color = UiColors.muted, fontSize = 12.sp)
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.instagram.com/movie_x199?hvrq=dmp3bDJyZmd0dXll")))
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                ) {
+                    MovieHubText("Instagram")
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                }
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com/@movie.x1990?_r=1&_t=ZS-9BeIX3GV2Gn")))
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+                ) {
+                    MovieHubText("TikTok")
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1816,7 +1875,7 @@ private fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
         MovieHubText("LANGUE", color = UiColors.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
         MovieHubText("Langue de l’application", color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        MovieHubText("Choisis la langue de toute l’interface MovieHub.", color = UiColors.muted, fontSize = 12.sp)
+        MovieHubText("Choisis la langue de toute l’interface Movie X.", color = UiColors.muted, fontSize = 12.sp)
         Spacer(Modifier.height(10.dp))
         MovieHubLanguages.options.forEach { option ->
             Row(
@@ -1834,7 +1893,7 @@ private fun SettingsScreen(
         MovieHubText("APPARENCE", color = UiColors.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
         Spacer(Modifier.height(8.dp))
         MovieHubText("Thème de l’application", color = UiColors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        MovieHubText("Choisis l’apparence de MovieHub.", color = UiColors.muted, fontSize = 12.sp)
+        MovieHubText("Choisis l’apparence de Movie X.", color = UiColors.muted, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
         listOf("Sombre", "Clair", "Système").forEach { option ->
             Row(
@@ -1856,6 +1915,8 @@ private fun SettingsScreen(
             }
             Spacer(Modifier.height(8.dp))
         }
+        Spacer(Modifier.height(18.dp))
+        SocialLinksSection()
         Spacer(Modifier.height(18.dp))
         MovieHubText("Les préférences sont enregistrées sur cet appareil.", color = UiColors.muted, fontSize = 11.sp)
     }
