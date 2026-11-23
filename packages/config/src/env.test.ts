@@ -31,6 +31,7 @@ test('API : configuration valide avec valeurs par défaut', () => {
   assert.equal(env.port, 3000);
   assert.equal(env.r2.signedUrlTtlSeconds, 900);
   assert.equal(env.r2.bucket, 'movieshub');
+  assert.equal(env.catalogStorageProvider, 'r2');
 });
 
 test('API : collecte toutes les erreurs d’un coup', () => {
@@ -91,6 +92,37 @@ test('API : Supabase est sélectionné pour les transferts cloud sans remplacer 
   assert.equal(env.supabase.projectUrl, 'https://example-project.supabase.co');
   assert.equal(env.supabase.bucket, 'movieshub-test');
   assert.equal(env.r2.bucket, '');
+});
+
+
+test('API : Supabase peut être choisi pour le catalogue sans clés R2', () => {
+  const source = apiSource();
+  delete source.R2_ACCOUNT_ID;
+  delete source.R2_ACCESS_KEY_ID;
+  delete source.R2_SECRET_ACCESS_KEY;
+  delete source.R2_BUCKET;
+  const env = loadApiEnv({
+    ...source,
+    TRANSFER_STORAGE_PROVIDER: 'supabase',
+    CATALOG_STORAGE_PROVIDER: 'supabase',
+    SUPABASE_URL: 'https://example-project.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'supabase-service-role-secret-that-is-long-enough',
+    SUPABASE_STORAGE_BUCKET: 'movieshub-transfer-test',
+    SUPABASE_CATALOG_BUCKET: 'movieshub-catalog-test',
+  });
+  assert.equal(env.catalogStorageProvider, 'supabase');
+  assert.equal(env.supabase.bucket, 'movieshub-transfer-test');
+  assert.equal(env.supabase.catalogBucket, 'movieshub-catalog-test');
+  assert.equal(env.r2.bucket, '');
+});
+
+test('API : Supabase catalogue exige son bucket dédié', () => {
+  assert.throws(() => loadApiEnv({
+    ...apiSource(),
+    CATALOG_STORAGE_PROVIDER: 'supabase',
+    SUPABASE_URL: 'https://example-project.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'supabase-service-role-secret-that-is-long-enough',
+  }), /SUPABASE_CATALOG_BUCKET/);
 });
 
 test('API : Supabase exige URL, service role et bucket pour le transfert cloud', () => {

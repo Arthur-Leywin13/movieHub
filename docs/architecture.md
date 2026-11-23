@@ -17,14 +17,13 @@
 
 Les lignes « prévu » ne sont pas encore implémentées.
 
-## Test de transfert cloud via Supabase
+## Test de stockage du catalogue et de transfert via Supabase
 
-- Le stockage du catalogue et des médias reste sur R2. Le fournisseur `TRANSFER_STORAGE_PROVIDER` ne concerne que les transferts de fichiers utilisateur.
-- Pour un test Supabase : bucket privé, `TRANSFER_STORAGE_PROVIDER=supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` et `SUPABASE_STORAGE_BUCKET` configurés uniquement sur l'API.
-- Le test utilise un upload standard en un seul PUT signé, limité à 40 Mio. Le lien d'upload Supabase expire après 2 h ; le lien de partage de téléchargement expire après 1 h.
-- Ce chemin n'est pas resumable/multipart. Pour les gros fichiers et la reprise après coupure, le transfert doit rester sur R2 jusqu'à l'intégration d'un protocole resumable Supabase.
-- Les transferts cloud sont temporaires et ne sont pas inscrits dans la base : l'objet est rangé sous un chemin lié à l'utilisateur et un UUID ; le propriétaire peut demander un lien de partage ou supprimer l'objet via l'API. Le lien signé peut être partagé pendant sa durée de validité.
-
+- Le fournisseur `CATALOG_STORAGE_PROVIDER` choisit le stockage des fichiers administrateur (vidéos, affiches, sous-titres et médias du catalogue) ; `TRANSFER_STORAGE_PROVIDER` choisit séparément le stockage des transferts privés entre utilisateurs. Les deux sont `r2` par défaut.
+- Pour tester l'ajout d'un film avec Supabase : bucket privé, `CATALOG_STORAGE_PROVIDER=supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` et `SUPABASE_CATALOG_BUCKET` configurés uniquement sur l'API. La clé service-role ne doit jamais être envoyée au client.
+- Le fournisseur catalogue Supabase utilise un upload standard en un seul PUT signé et la vérification serveur de la taille via HEAD ; il désactive le multipart et la reprise. Tester d'abord avec un petit clip/poster et régler la limite de taille du bucket selon les capacités du projet Supabase.
+- Pour les transferts privés, configurer en plus `TRANSFER_STORAGE_PROVIDER=supabase` et `SUPABASE_STORAGE_BUCKET`. Le chemin transfert est limité à 40 Mio par fichier ; lien d'upload valable 2 h et partage environ 1 h.
+- Les transferts cloud sont temporaires et ne sont pas inscrits dans la base : l'objet est rangé sous un chemin lié à l'utilisateur et un UUID ; le propriétaire peut demander un lien de partage ou supprimer l'objet via l'API.
 ## Prisma 6 vs 7
 
 Prisma 7 introduit `prisma.config.ts`, un nouveau générateur et des adaptateurs de pilote obligatoires. Je n'ai pas pu vérifier son état de stabilité (pas d'accès au registre npm). Choix prudent : rester sur la dernière 6.x connue (6.19), migrer plus tard dans une tâche dédiée.

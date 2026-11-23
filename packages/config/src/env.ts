@@ -172,6 +172,7 @@ export interface ApiEnv {
   jwtRefreshSecret: string;
   botServiceToken: string;
   transferStorageProvider: 'r2' | 'supabase';
+  catalogStorageProvider: 'r2' | 'supabase';
   r2: {
     accountId: string;
     accessKeyId: string;
@@ -179,7 +180,7 @@ export interface ApiEnv {
     bucket: string;
     signedUrlTtlSeconds: number;
   };
-  supabase: { projectUrl: string; serviceRoleKey: string; bucket: string };
+  supabase: { projectUrl: string; serviceRoleKey: string; bucket: string; catalogBucket: string };
 }
 
 export interface BotEnv {
@@ -205,9 +206,12 @@ const OFFICIAL_BOT_API_HOST = 'api.telegram.org';
 export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
   const r = new Reader(source);
   const transferStorageProvider = r.oneOf('TRANSFER_STORAGE_PROVIDER', ['r2', 'supabase'] as const, 'r2');
+  const catalogStorageProvider = r.oneOf('CATALOG_STORAGE_PROVIDER', ['r2', 'supabase'] as const, 'r2');
+  const usesSupabase = transferStorageProvider === 'supabase' || catalogStorageProvider === 'supabase';
   const env: ApiEnv = {
     nodeEnv: r.oneOf('NODE_ENV', NODE_ENVS, 'development'),
     transferStorageProvider,
+    catalogStorageProvider,
     port: r.int('API_PORT', { default: 3000, min: 1, max: 65535 }),
     publicUrl: r.url('API_PUBLIC_URL', { protocols: ['http:', 'https:'], default: 'http://localhost:3000' }),
     trustProxy: r.bool('API_TRUST_PROXY', false),
@@ -218,17 +222,18 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     jwtRefreshSecret: r.secret('JWT_REFRESH_SECRET'),
     botServiceToken: r.secret('BOT_SERVICE_TOKEN'),
     r2: {
-      accountId: r.str('R2_ACCOUNT_ID', transferStorageProvider === 'supabase' ? { default: '' } : {}),
-      accessKeyId: r.str('R2_ACCESS_KEY_ID', transferStorageProvider === 'supabase' ? { default: '' } : {}),
-      secretAccessKey: r.str('R2_SECRET_ACCESS_KEY', transferStorageProvider === 'supabase' ? { default: '' } : {}),
-      bucket: r.str('R2_BUCKET', transferStorageProvider === 'supabase' ? { default: '' } : {}),
+      accountId: r.str('R2_ACCOUNT_ID', usesSupabase ? { default: '' } : {}),
+      accessKeyId: r.str('R2_ACCESS_KEY_ID', usesSupabase ? { default: '' } : {}),
+      secretAccessKey: r.str('R2_SECRET_ACCESS_KEY', usesSupabase ? { default: '' } : {}),
+      bucket: r.str('R2_BUCKET', usesSupabase ? { default: '' } : {}),
       signedUrlTtlSeconds: r.int('R2_SIGNED_URL_TTL_SECONDS', { default: 900, min: 60, max: 604800 }),
     },
-    supabase: transferStorageProvider === 'supabase' ? {
+    supabase: usesSupabase ? {
       projectUrl: r.url('SUPABASE_URL', { protocols: ['https:', 'http:'] }),
       serviceRoleKey: r.secret('SUPABASE_SERVICE_ROLE_KEY'),
-      bucket: r.str('SUPABASE_STORAGE_BUCKET'),
-    } : { projectUrl: '', serviceRoleKey: '', bucket: '' },
+      bucket: transferStorageProvider === 'supabase' ? r.str('SUPABASE_STORAGE_BUCKET') : '',
+      catalogBucket: catalogStorageProvider === 'supabase' ? r.str('SUPABASE_CATALOG_BUCKET') : '',
+    } : { projectUrl: '', serviceRoleKey: '', bucket: '', catalogBucket: '' },
   };
   const bEmail = source['BOOTSTRAP_ADMIN_EMAIL']?.trim();
   const bPassword = source['BOOTSTRAP_ADMIN_PASSWORD'];

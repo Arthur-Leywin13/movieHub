@@ -58,13 +58,20 @@ async function main(): Promise<void> {
     { accessSecret: env.jwtAccessSecret, refreshPepper: env.jwtRefreshSecret },
   );
   const actors = new ActorResolver({ auth, admins, botServiceToken: env.botServiceToken });
-  // R2 remains the permanent media/catalog provider. Supabase is selectable only for user cloud transfers.
+  // R2 is the default provider; Supabase can be selected independently for catalog uploads and user transfers.
   const r2 = new R2Client({
     accountId: env.r2.accountId,
     accessKeyId: env.r2.accessKeyId,
     secretAccessKey: env.r2.secretAccessKey,
     bucket: env.r2.bucket,
   });
+  const catalogStorage = env.catalogStorageProvider === 'supabase'
+    ? new SupabaseStorageClient({
+        projectUrl: env.supabase.projectUrl,
+        serviceRoleKey: env.supabase.serviceRoleKey,
+        bucket: env.supabase.catalogBucket,
+      })
+    : r2;
   const transferStorage = env.transferStorageProvider === 'supabase'
     ? new SupabaseStorageClient({
         projectUrl: env.supabase.projectUrl,
@@ -74,12 +81,13 @@ async function main(): Promise<void> {
     : r2;
   const media = new PrismaMediaFileRepo(prisma);
   const audit = new PrismaAuditRepo(prisma);
-  const uploads = new UploadService({ r2, media, audit, bucket: env.r2.bucket });
+  const catalogBucket = env.catalogStorageProvider === 'supabase' ? env.supabase.catalogBucket : env.r2.bucket;
+  const uploads = new UploadService({ r2: catalogStorage, media, audit, bucket: catalogBucket, supportsMultipart: env.catalogStorageProvider !== 'supabase', uploadUrlTtlSeconds: env.catalogStorageProvider === 'supabase' ? 2 * 3600 : undefined });
   const catalogRepo = new PrismaCatalogRepo(prisma);
   const catalogAdmin = new CatalogAdminService({ repo: catalogRepo, media, audit });
   const userDataRepo = new PrismaUserDataRepo(prisma);
-  const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: r2, stats: userDataRepo });
-  const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: r2, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
+  const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: catalogStorage, stats: userDataRepo });
+  const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: catalogStorage, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
   const cloudTransfers = new CloudTransferService({
     storage: transferStorage,
     uploadTtlSeconds: env.transferStorageProvider === 'supabase' ? 2 * 3600 : 6 * 3600,

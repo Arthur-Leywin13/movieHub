@@ -115,7 +115,7 @@ export class UploadService {
       await this.log(actor, ctx, 'media.upload.init', id, { kind: input.kind, sizeBytes: input.sizeBytes, multipart: false });
       return {
         mediaFileId: id, kind: input.kind, multipart: false, sizeBytes: input.sizeBytes,
-        expiresInSeconds: this.uploadUrlTtlSeconds, url: await this.r2.presignPut(objectKey, UPLOAD_URL_TTL_SECONDS),
+        expiresInSeconds: this.uploadUrlTtlSeconds, url: await this.r2.presignPut(objectKey, this.uploadUrlTtlSeconds),
       };
     }
 
@@ -147,7 +147,7 @@ export class UploadService {
     const base = { mediaFileId: m.id, status: m.status, multipart: m.multipartUploadId !== null };
     if (m.status !== 'PENDING') return base;
     if (m.multipartUploadId === null) {
-      return { ...base, expiresInSeconds: UPLOAD_URL_TTL_SECONDS, url: await this.r2.presignPut(m.objectKey, UPLOAD_URL_TTL_SECONDS) };
+      return { ...base, expiresInSeconds: this.uploadUrlTtlSeconds, url: await this.r2.presignPut(m.objectKey, this.uploadUrlTtlSeconds) };
     }
     const total = m.sizeBytes as number;
     const partSize = m.multipartPartSize as number;
