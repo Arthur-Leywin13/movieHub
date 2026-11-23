@@ -146,13 +146,13 @@ export class SupabaseStorageClient {
     }
   }
 
-  private multipartUnavailable(): never {
-    throw new SupabaseStorageError('Supabase test provider : envoi multipart/reprise non pris en charge. Utilisez R2 pour les gros fichiers.');
+  private multipartUnavailable(): SupabaseStorageError {
+    return new SupabaseStorageError('Supabase test provider : envoi multipart/reprise non pris en charge. Utilisez R2 pour les gros fichiers.');
   }
 
   createMultipartUpload(_key: string, _contentType?: string): Promise<string> { return Promise.reject(this.multipartUnavailable()); }
-  presignUploadPart(_key: string, _uploadId: string, _partNumber: number, _expiresSeconds: number): string { return this.multipartUnavailable(); }
+  presignUploadPart(_key: string, _uploadId: string, _partNumber: number, _expiresSeconds: number): string { throw this.multipartUnavailable(); }
   listParts(_key: string, _uploadId: string): Promise<StoragePart[]> { return Promise.reject(this.multipartUnavailable()); }
   completeMultipartUpload(_key: string, _uploadId: string, _parts: readonly StoragePart[]): Promise<void> { return Promise.reject(this.multipartUnavailable()); }
-  abortMultipartUpload(_key: string, _uploadId: string): Promise<void> { return Promise.reject(this.multipartUnavailable()); }
+  abortMultipartUpload(_key: string, _uploadId: string): Promise<void> { return Promise.reject(this.multipartUnavailable());
 }
