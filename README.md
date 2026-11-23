@@ -57,6 +57,18 @@ Après `prisma migrate reset`, relancer `npm run db:search` (les triggers et CHE
 | `npm run validate -w @movieshub/database` | `prisma validate` (nécessite `.env` et `npm install`) |
 | `npm run typecheck` | TypeScript (le package database exige `db:generate` avant) |
 
+## Test de transfert cloud via Supabase
+
+Pour tester un transfert entre deux appareils avant de tester R2, l'API peut utiliser Supabase uniquement pour les transferts utilisateur ; les médias du catalogue restent sur R2.
+
+1. Dans Supabase Storage, crée un bucket privé, par exemple `movieshub-test`.
+2. Sur le service **API** Railway, ajoute `TRANSFER_STORAGE_PROVIDER=supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` et `SUPABASE_STORAGE_BUCKET=movieshub-test`.
+3. Ne mets jamais la service-role key dans l'application Android ni dans une variable publique.
+4. Rebuild l'application Android avec l'URL publique de l'API Railway (voir `apps/android/README.md`), connecte-toi, puis ouvre Téléchargements → Transfert cloud (test).
+5. Envoie une petite vidéo, partage le lien généré, puis colle ce lien sur le second appareil pour la recevoir.
+
+Limite du test : 40 Mio par fichier, upload simple, sans reprise multipart. R2 reste disponible pour les gros fichiers. Les liens de partage expirent après environ une heure.
+
 ## Test réel de R2
 
 Voir `docs/r2-live-test.md` : créer le bucket et les clés, ajouter 4 secrets GitHub, lancer le workflow « R2 réel ». Aucune commande locale.
