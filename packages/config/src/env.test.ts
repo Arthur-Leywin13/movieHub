@@ -30,7 +30,7 @@ test('API : configuration valide avec valeurs par défaut', () => {
   assert.equal(env.nodeEnv, 'development');
   assert.equal(env.port, 3000);
   assert.equal(env.r2.signedUrlTtlSeconds, 900);
-  assert.equal(env.r2.bucket, 'movieshub');
+  assert.equal(env.r2.bucket, '');
 });
 
 test('API : collecte toutes les erreurs d’un coup', () => {
@@ -75,8 +75,13 @@ test('API : ignore les variables vides', () => {
 });
 
 test('API : Supabase est sélectionné pour les transferts cloud sans remplacer R2', () => {
+  const source = apiSource();
+  delete source.R2_ACCOUNT_ID;
+  delete source.R2_ACCESS_KEY_ID;
+  delete source.R2_SECRET_ACCESS_KEY;
+  delete source.R2_BUCKET;
   const env = loadApiEnv({
-    ...apiSource(),
+    ...source,
     TRANSFER_STORAGE_PROVIDER: 'supabase',
     SUPABASE_URL: 'https://example-project.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'supabase-service-role-secret-that-is-long-enough',
