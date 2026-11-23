@@ -38,7 +38,7 @@ import java.net.URL
 import java.net.URLDecoder
 import java.util.UUID
 
-private const val CLOUD_TRANSFER_MAX_BYTES = 50L * 1024L * 1024L
+private const val CLOUD_TRANSFER_MAX_BYTES = 40L * 1024L * 1024L
 
 @Composable
 fun CloudTransferDialog(
@@ -52,7 +52,7 @@ fun CloudTransferDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Test cloud : fichier vidéo de 50 Mio maximum.") }
+    var status by remember { mutableStateOf("Test cloud : fichier vidéo de 40 Mio maximum.") }
     var receiveUrl by remember { mutableStateOf("") }
     var completedUrl by remember { mutableStateOf("") }
     var completedName by remember { mutableStateOf("video.mp4") }
@@ -69,7 +69,7 @@ fun CloudTransferDialog(
                     status = "Préparation de l’envoi…"
                     runCatching {
                         val info = queryCloudFile(context, uri)
-                        require(info.size in 1..CLOUD_TRANSFER_MAX_BYTES) { "Pour ce test, choisis une vidéo de 50 Mio maximum." }
+                        require(info.size in 1..CLOUD_TRANSFER_MAX_BYTES) { "Pour ce test, choisis une vidéo de 40 Mio maximum." }
                         val (activeSession, initRaw) = MoviesHubApi.authorizedPost(
                             "/me/transfers",
                             currentSession,
@@ -248,9 +248,10 @@ private suspend fun downloadCloudFile(context: Context, rawUrl: String): SharedV
         val extension = name.substringAfterLast('.', "").lowercase().filter { it.isLetterOrDigit() }.take(8)
         require(extension in setOf("mp4", "mkv", "webm", "mov", "m4v", "avi")) { "Le lien ne semble pas contenir une vidéo prise en charge." }
         val title = name.substringBeforeLast('.', name).replace(Regex("[^A-Za-z0-9 _-]"), "_").trim().take(70).ifBlank { "MovieHub video" }
-        destination = File(directory, "${title}_${UUID.randomUUID().toString().take(8)}.$extension")
+        val target = File(directory, "${title}_${UUID.randomUUID().toString().take(8)}.$extension")
+        destination = target
         connection.inputStream.use { input ->
-            destination.outputStream().buffered().use { output ->
+            target.outputStream().buffered().use { output ->
                 val buffer = ByteArray(256 * 1024)
                 var total = 0L
                 while (true) {
@@ -262,8 +263,8 @@ private suspend fun downloadCloudFile(context: Context, rawUrl: String): SharedV
                 }
             }
         }
-        require(destination.length() > 0L) { "Le fichier reçu est vide." }
-        SharedVideo(destination, title)
+        require(target.length() > 0L) { "Le fichier reçu est vide." }
+        SharedVideo(target, title)
     } catch (error: Throwable) {
         destination?.delete()
         throw error
