@@ -1,3 +1,7 @@
+val moviesHubApiBaseUrl = providers.gradleProperty("movieshubApiBaseUrl")
+    .orElse("http://10.0.2.2:3000")
+    .get()
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -14,7 +18,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3000\"")
+        buildConfigField("String", "API_BASE_URL", "\"${moviesHubApiBaseUrl}\"")
     }
 
     buildFeatures {
