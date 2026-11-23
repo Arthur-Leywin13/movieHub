@@ -171,7 +171,7 @@ export interface ApiEnv {
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
   botServiceToken: string;
-  storageProvider: 'r2' | 'supabase';
+  transferStorageProvider: 'r2' | 'supabase';
   r2: {
     accountId: string;
     accessKeyId: string;
@@ -204,10 +204,10 @@ const OFFICIAL_BOT_API_HOST = 'api.telegram.org';
 
 export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
   const r = new Reader(source);
-  const storageProvider = r.oneOf('STORAGE_PROVIDER', ['r2', 'supabase'] as const, 'r2');
+  const transferStorageProvider = r.oneOf('TRANSFER_STORAGE_PROVIDER', ['r2', 'supabase'] as const, 'r2');
   const env: ApiEnv = {
     nodeEnv: r.oneOf('NODE_ENV', NODE_ENVS, 'development'),
-    storageProvider,
+    transferStorageProvider,
     port: r.int('API_PORT', { default: 3000, min: 1, max: 65535 }),
     publicUrl: r.url('API_PUBLIC_URL', { protocols: ['http:', 'https:'], default: 'http://localhost:3000' }),
     trustProxy: r.bool('API_TRUST_PROXY', false),
@@ -218,13 +218,13 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     jwtRefreshSecret: r.secret('JWT_REFRESH_SECRET'),
     botServiceToken: r.secret('BOT_SERVICE_TOKEN'),
     r2: {
-      accountId: storageProvider === 'r2' ? r.str('R2_ACCOUNT_ID') : (source['R2_ACCOUNT_ID']?.trim() ?? ''),
-      accessKeyId: storageProvider === 'r2' ? r.str('R2_ACCESS_KEY_ID') : (source['R2_ACCESS_KEY_ID']?.trim() ?? ''),
-      secretAccessKey: storageProvider === 'r2' ? r.str('R2_SECRET_ACCESS_KEY') : (source['R2_SECRET_ACCESS_KEY']?.trim() ?? ''),
-      bucket: storageProvider === 'r2' ? r.str('R2_BUCKET') : (source['R2_BUCKET']?.trim() ?? ''),
+      accountId: r.str('R2_ACCOUNT_ID'),
+      accessKeyId: r.str('R2_ACCESS_KEY_ID'),
+      secretAccessKey: r.str('R2_SECRET_ACCESS_KEY'),
+      bucket: r.str('R2_BUCKET'),
       signedUrlTtlSeconds: r.int('R2_SIGNED_URL_TTL_SECONDS', { default: 900, min: 60, max: 604800 }),
     },
-    supabase: storageProvider === 'supabase' ? {
+    supabase: transferStorageProvider === 'supabase' ? {
       projectUrl: r.url('SUPABASE_URL', { protocols: ['https:', 'http:'] }),
       serviceRoleKey: r.secret('SUPABASE_SERVICE_ROLE_KEY'),
       bucket: r.str('SUPABASE_STORAGE_BUCKET'),
