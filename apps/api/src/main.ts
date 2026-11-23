@@ -72,7 +72,12 @@ async function main(): Promise<void> {
   const storageBucket = env.storageProvider === 'supabase' ? env.supabase.bucket : env.r2.bucket;
   const media = new PrismaMediaFileRepo(prisma);
   const audit = new PrismaAuditRepo(prisma);
-  const uploads = new UploadService({ r2: storage, media, audit, bucket: storageBucket, supportsMultipart: env.storageProvider === 'r2' });
+  const uploads = new UploadService({
+    r2: storage, media, audit, bucket: storageBucket,
+    supportsMultipart: env.storageProvider === 'r2',
+    // Supabase signed upload tokens expire after 2 h; R2 multipart links retain the 6 h policy.
+    uploadUrlTtlSeconds: env.storageProvider === 'supabase' ? 2 * 3600 : 6 * 3600,
+  });
   const catalogRepo = new PrismaCatalogRepo(prisma);
   const catalogAdmin = new CatalogAdminService({ repo: catalogRepo, media, audit });
   const userDataRepo = new PrismaUserDataRepo(prisma);
