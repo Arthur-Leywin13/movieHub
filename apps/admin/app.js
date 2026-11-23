@@ -122,7 +122,7 @@
         body: {
           email: $("#loginEmail").value.trim(),
           password: $("#loginPassword").value,
-          deviceName: "MovieHub Admin Web",
+          deviceName: "Movie X Admin Web",
           platform: "WEB"
         }
       }, false);
@@ -451,7 +451,7 @@
       $("#uploadedMedia").className = "media-id";
       $("#uploadedMedia").innerHTML = "Fichier vérifié :<br><br><strong>" + escapeHtml(completed.mediaFileId) + "</strong><br><br><button class=\"btn secondary\" id=\"copyMediaId\" type=\"button\">Copier l’identifiant</button>";
       $("#copyMediaId").addEventListener("click", () => navigator.clipboard.writeText(completed.mediaFileId).then(() => toast("Identifiant copié.")));
-      toast("Fichier envoyé et vérifié par MovieHub.");
+      toast("Fichier envoyé et vérifié par Movie X.");
     } catch (error) {
       progress(0, "Échec de l’envoi");
       $("#uploadedMedia").className = "media-id empty-state";

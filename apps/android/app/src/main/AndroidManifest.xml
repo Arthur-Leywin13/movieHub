@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <application
         android:allowBackup="false"
-        android:label="MovieHub"
+        android:label="Movie X"
         android:icon="@drawable/moviehub_logo"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"

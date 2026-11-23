@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0b0d">
-  <meta name="description" content="Tableau de bord d’administration MovieHub">
-  <title>MovieHub — Administration</title>
+  <meta name="description" content="Tableau de bord d’administration Movie X">
+  <title>Movie X — Administration</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <div id="loginView" class="login-shell">
     <section class="login-card">
-      <div class="brand-mark">M<span>H</span></div>
+      <div class="brand-mark">M<span>X</span></div>
       <p class="eyebrow">ESPACE SÉCURISÉ</p>
-      <h1>Administration <span>MovieHub</span></h1>
-      <p class="muted">Connecte-toi avec ton compte administrateur MovieHub.</p>
+      <h1>Administration <span>Movie X</span></h1>
+      <p class="muted">Connecte-toi avec ton compte administrateur Movie X.</p>
       <form id="loginForm" class="stack">
         <label>Adresse e-mail<input id="apiUrl" type="url" value="http://localhost:3000" autocomplete="url" required></label>
         <label>E-mail<input id="loginEmail" type="email" autocomplete="username" required></label>
@@ -28,9 +28,9 @@
 
   <div id="appView" class="app-shell hidden">
     <aside class="sidebar">
-      <a class="brand" href="#" aria-label="MovieHub Administration">
-        <span class="brand-mark small">M<span>H</span></span>
-        <span><strong>MOVIEHUB</strong><small>ADMINISTRATION</small></span>
+      <a class="brand" href="#" aria-label="Movie X Administration">
+        <span class="brand-mark small">M<span>X</span></span>
+        <span><strong>MOVIE X</strong><small>ADMINISTRATION</small></span>
       </a>
       <div class="side-label">ESPACE DE TRAVAIL</div>
       <nav class="nav-list" aria-label="Navigation principale">
@@ -50,7 +50,7 @@
 
     <main class="main-area">
       <header class="topbar">
-        <div><p class="eyebrow" id="topEyebrow">MOVIEHUB / ADMIN</p><h1 id="pageTitle">Vue générale</h1></div>
+        <div><p class="eyebrow" id="topEyebrow">MOVIE X / ADMIN</p><h1 id="pageTitle">Vue générale</h1></div>
         <div class="top-actions"><span class="live-pill"><i></i> Connecté à l’API</span><button class="icon-button" id="refreshButton" title="Actualiser" aria-label="Actualiser">↻</button></div>
       </header>
       <div id="globalNotice" class="notice hidden" role="status"></div>
@@ -65,7 +65,7 @@
         </div>
         <div class="panel-grid">
           <section class="panel"><div class="panel-heading"><div><p class="eyebrow">DERNIÈRES FICHES</p><h3>Catalogue récent</h3></div><button class="text-button" data-view="catalog">Tout voir →</button></div><div id="recentContent" class="recent-list"><div class="loading-line">Chargement du catalogue…</div></div></section>
-          <section class="panel quick-panel"><div class="panel-heading"><div><p class="eyebrow">ACTIONS RAPIDES</p><h3>Gérer MovieHub</h3></div></div>
+          <section class="panel quick-panel"><div class="panel-heading"><div><p class="eyebrow">ACTIONS RAPIDES</p><h3>Gérer Movie X</h3></div></div>
             <button class="quick-action" data-action="new-content"><span>＋</span><div><strong>Créer une fiche</strong><small>Film, série ou animé</small></div><b>→</b></button>
             <button class="quick-action" data-view="uploads"><span>⇧</span><div><strong>Envoyer un média</strong><small>Vidéo, affiche ou sous-titre</small></div><b>→</b></button>
             <button class="quick-action" data-view="notifications"><span>◉</span><div><strong>Envoyer une notification</strong><small>Informer les utilisateurs</small></div><b>→</b></button>
@@ -117,7 +117,7 @@
       </section>
 
       <section class="view" id="view-notifications">
-        <div class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">COMMUNICATION</p><h3>Nouvelle notification</h3><p class="muted">Les notifications sont envoyées dans la boîte de réception MovieHub.</p></div></div>
+        <div class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">COMMUNICATION</p><h3>Nouvelle notification</h3><p class="muted">Les notifications sont envoyées dans la boîte de réception Movie X.</p></div></div>
           <form id="notificationForm" class="form-grid">
             <label>Type<select id="notificationType"><option>ANNOUNCEMENT</option><option>MAINTENANCE</option><option>CATALOG_CHANGE</option><option>NEW_EPISODE</option><option>NEW_SEASON</option><option>NEW_LANGUAGE_VERSION</option><option>CONTENT_WITHDRAWAL</option><option>ACCOUNT</option><option>OPERATION_CONFIRMATION</option></select></label>
             <label>Destinataires<select id="notificationAudience"><option value="ALL">Tous les utilisateurs</option><option value="FOLLOWERS">Abonnés d’un contenu</option><option value="USER">Un utilisateur</option></select></label>
@@ -144,7 +144,7 @@
         <div class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">SUIVI</p><h3>Retraits programmés</h3></div><button class="btn secondary" id="loadWithdrawals">Actualiser</button></div><div id="withdrawalList" class="simple-list"><div class="empty-state">Chargement…</div></div></div>
       </section>
 
-      <footer class="footer"><span>MovieHub Administration</span><span>Les actions sensibles sont journalisées.</span></footer>
+      <footer class="footer"><span>Movie X Administration</span><span>Les actions sensibles sont journalisées.</span></footer>
     </main>
   </div>
 
