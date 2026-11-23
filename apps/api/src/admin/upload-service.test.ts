@@ -11,11 +11,11 @@ const MiB = 1024 * 1024;
 const ACTOR: AdminActor = { kind: 'admin', userId: 'u1', adminId: 'adm1', role: 'EDITOR', via: 'bot', telegramId: 1n };
 const CTX = { ip: '1.1.1.1', requestId: 'req1' };
 
-function setup() {
+function setup(options: { supportsMultipart?: boolean } = {}) {
   const r2 = new FakeR2();
   const media = new MemoryMediaRepo();
   const audit = new MemoryAuditRepo();
-  const svc = new UploadService({ r2, media, audit, bucket: 'movieshub', now: () => new Date('2026-11-01T12:00:00Z') });
+  const svc = new UploadService({ r2, media, audit, bucket: 'movieshub', supportsMultipart: options.supportsMultipart, now: () => new Date('2026-11-01T12:00:00Z') });
   return { r2, media, audit, svc };
 }
 
@@ -47,6 +47,15 @@ test('init vidéo 100 Mio : 7 liens, clé serveur (jamais le nom du client), aud
   assert.equal(audit.entries.length, 1);
   assert.equal(audit.entries[0]?.source, 'TELEGRAM_BOT');
   assert.ok(!JSON.stringify(audit.entries).includes('https://'));
+});
+
+test('mode fournisseur sans multipart : une vidéo de test reçoit un lien PUT unique', async () => {
+  const { svc, media } = setup({ supportsMultipart: false });
+  const out = await svc.init(ACTOR, { kind: 'VIDEO', filename: 'sample.mp4', sizeBytes: 1024 }, CTX);
+  assert.equal(out.multipart, false);
+  assert.ok(out.url?.startsWith('https://fake.r2/put/'));
+  assert.equal(out.partCount, undefined);
+  assert.equal(media.files.get(out.mediaFileId)?.multipartUploadId, null);
 });
 
 test('init : extension, taille et type refusés', async () => {
