@@ -1,4 +1,6 @@
 import { Router } from './http/router.ts';
+import type { AuditLogService } from './audit/service.ts';
+import { registerAuditLogRoutes } from './audit/routes.ts';
 import type { Handler, HttpRequest } from './http/types.ts';
 import { asObject, email, int, oneOf, optStr, str, uuidParam } from './http/validation.ts';
 import { UploadService } from './admin/upload-service.ts';
@@ -31,6 +33,8 @@ export interface AppDeps {
   notifications?: NotificationService;
   /** Retraits de contenus annoncés et exécutés automatiquement. */
   contentWithdrawals?: ContentWithdrawalService;
+  /** Consultation paginée et en lecture seule du journal d'audit. */
+  auditLogs?: AuditLogService;
   /** Vérifie la base de données (route /health/ready). */
   checkReady?: () => Promise<boolean>;
 }
@@ -134,6 +138,7 @@ export function buildApp(deps: AppDeps): Router {
   if (deps.scheduledPublications) registerScheduledPublicationRoutes(router, { service: deps.scheduledPublications, actors: deps.actors });
   if (deps.notifications) registerNotificationRoutes(router, { service: deps.notifications, actors: deps.actors });
   if (deps.contentWithdrawals) registerContentWithdrawalRoutes(router, { service: deps.contentWithdrawals, actors: deps.actors });
+  if (deps.auditLogs) registerAuditLogRoutes(router, { service: deps.auditLogs, actors: deps.actors });
 
   return router;
 }
