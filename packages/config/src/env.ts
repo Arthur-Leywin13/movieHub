@@ -218,10 +218,10 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     jwtRefreshSecret: r.secret('JWT_REFRESH_SECRET'),
     botServiceToken: r.secret('BOT_SERVICE_TOKEN'),
     r2: {
-      accountId: r.str('R2_ACCOUNT_ID'),
-      accessKeyId: r.str('R2_ACCESS_KEY_ID'),
-      secretAccessKey: r.str('R2_SECRET_ACCESS_KEY'),
-      bucket: r.str('R2_BUCKET'),
+      accountId: r.str('R2_ACCOUNT_ID', transferStorageProvider === 'supabase' ? { default: '' } : {}),
+      accessKeyId: r.str('R2_ACCESS_KEY_ID', transferStorageProvider === 'supabase' ? { default: '' } : {}),
+      secretAccessKey: r.str('R2_SECRET_ACCESS_KEY', transferStorageProvider === 'supabase' ? { default: '' } : {}),
+      bucket: r.str('R2_BUCKET', transferStorageProvider === 'supabase' ? { default: '' } : {}),
       signedUrlTtlSeconds: r.int('R2_SIGNED_URL_TTL_SECONDS', { default: 900, min: 60, max: 604800 }),
     },
     supabase: transferStorageProvider === 'supabase' ? {
