@@ -238,7 +238,7 @@ private suspend fun downloadCloudFile(context: Context, rawUrl: String): SharedV
         val length = connection.contentLengthLong
         require(length <= CLOUD_TRANSFER_MAX_BYTES) { "Le fichier dépasse la limite de test de 40 Mio." }
         val disposition = connection.getHeaderField("Content-Disposition").orEmpty()
-        val headerName = Regex("filename\*=UTF-8''([^;]+)|filename=\"?([^;\"\\r\\n]+)").find(disposition)
+        val headerName = Regex("filename\\*=UTF-8''([^;]+)|filename=\"?([^;\"\\r\\n]+)").find(disposition)
         val queryName = url.query.orEmpty().split('&').firstOrNull { it.startsWith("download=") }?.substringAfter('=')
             ?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }
         val name = (headerName?.groups?.get(1)?.value?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }
