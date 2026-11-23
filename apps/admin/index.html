@@ -40,6 +40,7 @@
         <button class="nav-item" data-view="planning"><span class="nav-icon">◷</span>Programmation</button>
         <button class="nav-item" data-view="notifications"><span class="nav-icon">◉</span>Notifications</button>
         <button class="nav-item" data-view="withdrawals"><span class="nav-icon">⌁</span>Retraits</button>
+        <button class="nav-item" data-view="audit"><span class="nav-icon">≡</span>Journal d’audit</button>
       </nav>
       <div class="sidebar-bottom">
         <div class="secure-chip"><span class="status-dot"></span><span>Session sécurisée</span></div>
@@ -142,6 +143,15 @@
           </form>
         </div>
         <div class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">SUIVI</p><h3>Retraits programmés</h3></div><button class="btn secondary" id="loadWithdrawals">Actualiser</button></div><div id="withdrawalList" class="simple-list"><div class="empty-state">Chargement…</div></div></div>
+      </section>
+
+      <section class="view" id="view-audit">
+        <div class="panel table-panel">
+          <div class="panel-heading"><div><p class="eyebrow">SÉCURITÉ ET TRAÇABILITÉ</p><h3>Journal des actions administratives</h3><p class="muted">Consultation en lecture seule des opérations enregistrées par Movie X.</p></div><button class="btn secondary" id="loadAuditLogs">Actualiser</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Administrateur</th><th>Action</th><th>Élément</th><th>Source</th><th>Résultat</th></tr></thead><tbody id="auditRows"><tr><td colspan="6" class="empty-cell">Ouvre cette section pour charger les événements.</td></tr></tbody></table></div>
+          <div class="pagination"><span id="auditCount">—</span><div><button class="btn ghost" id="auditPrev" disabled>Précédent</button> <button class="btn ghost" id="auditNext" disabled>Suivant</button></div></div>
+        </div>
+        <p class="notice subtle">Les valeurs internes et données sensibles ne sont pas affichées dans cette vue. L’accès est réservé aux administrateurs et super-administrateurs.</p>
       </section>
 
       <footer class="footer"><span>Movie X Administration</span><span>Les actions sensibles sont journalisées.</span></footer>
