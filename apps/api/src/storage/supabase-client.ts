@@ -98,18 +98,22 @@ export class SupabaseStorageClient {
   async presignGet(key: string, expiresSeconds: number, opts: { downloadName?: string } = {}): Promise<string> {
     const result = await this.jsonRequest(
       `object/sign/${encodeURIComponent(this.cfg.bucket)}/${encodeObjectPath(key)}`,
-      { expiresIn: expiresSeconds, ...(opts.downloadName ? { download: safeDownloadName(opts.downloadName) } : {}) },
+      { expiresIn: expiresSeconds },
     );
-    return this.absoluteSignedUrl(result['signedURL'] ?? result['signedUrl'] ?? result['url']);
+    const signedUrl = this.absoluteSignedUrl(result['signedURL'] ?? result['signedUrl'] ?? result['url']);
+    if (!opts.downloadName) return signedUrl;
+    const url = new URL(signedUrl);
+    url.searchParams.set('download', safeDownloadName(opts.downloadName));
+    return url.toString();
   }
 
-  async presignPut(key: string, expiresSeconds: number): Promise<string> {
+  /** Supabase signed upload tokens have a fixed two-hour lifetime. */
+  async presignPut(key: string, _expiresSeconds: number): Promise<string> {
     const result = await this.jsonRequest(
       `object/upload/sign/${encodeURIComponent(this.cfg.bucket)}/${encodeObjectPath(key)}`,
-      { expiresIn: expiresSeconds, upsert: false },
+      {},
     );
-    const signed = result['signedURL'] ?? result['signedUrl'] ?? result['url'];
-    return this.absoluteSignedUrl(signed);
+    return this.absoluteSignedUrl(result['signedURL'] ?? result['signedUrl'] ?? result['url']);
   }
 
   async headObject(key: string): Promise<{ sizeBytes: number; etag: string | null; contentType: string | null } | null> {
