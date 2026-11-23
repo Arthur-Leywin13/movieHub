@@ -58,35 +58,31 @@ async function main(): Promise<void> {
     { accessSecret: env.jwtAccessSecret, refreshPepper: env.jwtRefreshSecret },
   );
   const actors = new ActorResolver({ auth, admins, botServiceToken: env.botServiceToken });
-  const storage = env.storageProvider === 'supabase'
+  // R2 remains the permanent media/catalog provider. Supabase is selectable only for user cloud transfers.
+  const r2 = new R2Client({
+    accountId: env.r2.accountId,
+    accessKeyId: env.r2.accessKeyId,
+    secretAccessKey: env.r2.secretAccessKey,
+    bucket: env.r2.bucket,
+  });
+  const transferStorage = env.transferStorageProvider === 'supabase'
     ? new SupabaseStorageClient({
         projectUrl: env.supabase.projectUrl,
         serviceRoleKey: env.supabase.serviceRoleKey,
         bucket: env.supabase.bucket,
       })
-    : new R2Client({
-        accountId: env.r2.accountId,
-        accessKeyId: env.r2.accessKeyId,
-        secretAccessKey: env.r2.secretAccessKey,
-        bucket: env.r2.bucket,
-      });
-  const storageBucket = env.storageProvider === 'supabase' ? env.supabase.bucket : env.r2.bucket;
+    : r2;
   const media = new PrismaMediaFileRepo(prisma);
   const audit = new PrismaAuditRepo(prisma);
-  const uploads = new UploadService({
-    r2: storage, media, audit, bucket: storageBucket,
-    supportsMultipart: env.storageProvider === 'r2',
-    // Supabase signed upload tokens expire after 2 h; R2 multipart links retain the 6 h policy.
-    uploadUrlTtlSeconds: env.storageProvider === 'supabase' ? 2 * 3600 : 6 * 3600,
-  });
+  const uploads = new UploadService({ r2, media, audit, bucket: env.r2.bucket });
   const catalogRepo = new PrismaCatalogRepo(prisma);
   const catalogAdmin = new CatalogAdminService({ repo: catalogRepo, media, audit });
   const userDataRepo = new PrismaUserDataRepo(prisma);
-  const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: storage, stats: userDataRepo });
-  const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: storage, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
+  const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: r2, stats: userDataRepo });
+  const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: r2, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
   const cloudTransfers = new CloudTransferService({
-    storage,
-    uploadTtlSeconds: env.storageProvider === 'supabase' ? 2 * 3600 : 6 * 3600,
+    storage: transferStorage,
+    uploadTtlSeconds: env.transferStorageProvider === 'supabase' ? 2 * 3600 : 6 * 3600,
     downloadTtlSeconds: env.r2.signedUrlTtlSeconds,
   });
   const scheduledPublications = new ScheduledPublicationService({ prisma });
