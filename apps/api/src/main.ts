@@ -5,6 +5,7 @@
 import { EnvError, loadApiEnv } from '@movieshub/config';
 import { prisma } from '@movieshub/database';
 import { UploadService } from './admin/upload-service.ts';
+import { AuditLogService } from './audit/service.ts';
 import { buildApp } from './app.ts';
 import { ActorResolver } from './auth/actor.ts';
 import { AuthService } from './auth/auth-service.ts';
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
   const scheduledPublications = new ScheduledPublicationService({ prisma });
   const notifications = new NotificationService({ prisma });
   const contentWithdrawals = new ContentWithdrawalService({ prisma });
+  const auditLogs = new AuditLogService({ prisma });
 
   const router = buildApp({
     auth,
@@ -83,6 +85,7 @@ async function main(): Promise<void> {
     scheduledPublications,
     notifications,
     contentWithdrawals,
+    auditLogs,
     checkReady: async () => {
       await prisma.$queryRaw`SELECT 1`;
       return true;

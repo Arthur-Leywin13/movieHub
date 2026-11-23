@@ -539,8 +539,24 @@
     toast("Notification envoyée à " + (result.recipientCount ?? "—") + " utilisateur(s).");
   }
 
+  async function loadAuditLogs(page = 1) {
+    const data = await api("/admin/audit-logs?page=" + page + "&limit=30");
+    state.auditPage = data.page || page;
+    state.auditTotal = Number(data.total || 0);
+    const rows = data.items || [];
+    $("#auditRows").innerHTML = rows.length ? rows.map((row) => {
+      const admin = row.admin ? escapeHtml(row.admin.displayName) + '<small class="content-sub">' + escapeHtml(row.admin.email) + '</small>' : "Système";
+      const result = row.result === "SUCCESS" ? '<span class="status-tag published">Réussi</span>' : '<span class="status-tag withdrawn">Échec</span>';
+      const entity = escapeHtml(row.entityType) + (row.entityId ? '<small class="content-sub">' + escapeHtml(row.entityId) + '</small>' : "");
+      return '<tr><td>' + escapeHtml(formatDate(row.occurredAt)) + '</td><td>' + admin + '</td><td><strong>' + escapeHtml(row.action) + '</strong></td><td>' + entity + '</td><td>' + escapeHtml(row.source) + '</td><td>' + result + '</td></tr>';
+    }).join("") : '<tr><td colspan="6" class="empty-cell">Aucune action enregistrée.</td></tr>';
+    $("#auditCount").textContent = state.auditTotal + " événement(s) · page " + state.auditPage;
+    $("#auditPrev").disabled = state.auditPage <= 1;
+    $("#auditNext").disabled = state.auditPage * 30 >= state.auditTotal;
+  }
+
   async function navigate(view) {
-    const titles = { overview: "Vue générale", catalog: "Catalogue", uploads: "Fichiers média", planning: "Programmation", notifications: "Notifications", withdrawals: "Retraits" };
+    const titles = { overview: "Vue générale", catalog: "Catalogue", uploads: "Fichiers média", planning: "Programmation", notifications: "Notifications", withdrawals: "Retraits", audit: "Journal d’audit" };
     $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
     $$(".view").forEach((section) => section.classList.toggle("active", section.id === "view-" + view));
     $("#pageTitle").textContent = titles[view] || "Administration";
@@ -550,6 +566,7 @@
       if (view === "catalog") await loadCatalog(1);
       if (view === "planning") await loadSchedules();
       if (view === "withdrawals") await loadWithdrawals();
+      if (view === "audit") await loadAuditLogs(1);
     } catch (error) { showNotice(error.message, true); }
   }
 
@@ -611,6 +628,9 @@
     $("#notificationType").addEventListener("change", updateAudienceFields);
     $("#withdrawalForm").addEventListener("submit", (event) => createWithdrawal(event).catch((error) => toast(error.message, true)));
     $("#loadWithdrawals").addEventListener("click", () => loadWithdrawals().catch((error) => toast(error.message, true)));
+    $("#loadAuditLogs").addEventListener("click", () => loadAuditLogs(state.auditPage || 1).catch((error) => toast(error.message, true)));
+    $("#auditPrev").addEventListener("click", () => loadAuditLogs(Math.max(1, (state.auditPage || 1) - 1)).catch((error) => toast(error.message, true)));
+    $("#auditNext").addEventListener("click", () => loadAuditLogs((state.auditPage || 1) + 1).catch((error) => toast(error.message, true)));
   }
 
   async function init() {
