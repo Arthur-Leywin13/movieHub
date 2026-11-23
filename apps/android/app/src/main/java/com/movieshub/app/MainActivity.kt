@@ -184,7 +184,7 @@ private data class MediaItem(
     val versions: List<VideoVersion> = emptyList()
 )
 
-object MoviesHubApi {
+internal object MoviesHubApi {
     private fun request(path: String, method: String, body: JSONObject? = null, bearer: String? = null): String {
         val base = BuildConfig.API_BASE_URL.trimEnd('/')
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
