@@ -158,5 +158,5 @@ export class SupabaseStorageClient {
   presignUploadPart(_key: string, _uploadId: string, _partNumber: number, _expiresSeconds: number): string { throw this.multipartUnavailable(); }
   listParts(_key: string, _uploadId: string): Promise<StoragePart[]> { return Promise.reject(this.multipartUnavailable()); }
   completeMultipartUpload(_key: string, _uploadId: string, _parts: readonly StoragePart[]): Promise<void> { return Promise.reject(this.multipartUnavailable()); }
-  abortMultipartUpload(_key: string, _uploadId: string): Promise<void> { return Promise.reject(this.multipartUnavailable());
+  abortMultipartUpload(_key: string, _uploadId: string): Promise<void> { return Promise.reject(this.multipartUnavailable()); }
 }
