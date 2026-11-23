@@ -20,6 +20,7 @@ import { CatalogReadService } from './catalog/read-service.ts';
 import { PrismaCatalogRepo } from './infra/prisma-catalog-repo.ts';
 import { PrismaUserDataRepo } from './infra/prisma-user-data-repo.ts';
 import { UserDataService } from './user/service.ts';
+import { CloudTransferService } from './user/cloud-transfer-service.ts';
 import { ScheduledPublicationService } from './scheduler/service.ts';
 import { NotificationService } from './notifications/service.ts';
 import { ContentWithdrawalService } from './withdrawals/service.ts';
@@ -83,6 +84,11 @@ async function main(): Promise<void> {
   const userDataRepo = new PrismaUserDataRepo(prisma);
   const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: storage, stats: userDataRepo });
   const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: storage, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
+  const cloudTransfers = new CloudTransferService({
+    storage,
+    uploadTtlSeconds: env.storageProvider === 'supabase' ? 2 * 3600 : 6 * 3600,
+    downloadTtlSeconds: env.r2.signedUrlTtlSeconds,
+  });
   const scheduledPublications = new ScheduledPublicationService({ prisma });
   const notifications = new NotificationService({ prisma });
   const contentWithdrawals = new ContentWithdrawalService({ prisma });
@@ -95,6 +101,7 @@ async function main(): Promise<void> {
     catalogAdmin,
     catalogRead,
     userData,
+    cloudTransfers,
     scheduledPublications,
     notifications,
     contentWithdrawals,
