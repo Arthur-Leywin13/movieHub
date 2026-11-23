@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NotFoundError, ValidationError } from '@movieshub/shared';
 
 const MiB = 1024 * 1024;
-export const MAX_CLOUD_TRANSFER_BYTES = 50 * MiB;
+export const MAX_CLOUD_TRANSFER_BYTES = 40 * MiB;
 export const CLOUD_TRANSFER_DOWNLOAD_TTL_SECONDS = 60 * 60;
 
 export interface CloudTransferStorage {
