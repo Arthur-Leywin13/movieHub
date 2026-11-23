@@ -1,5 +1,7 @@
 import { Router } from './http/router.ts';
 import type { AuditLogService } from './audit/service.ts';
+import type { AdminManagementService } from './admin/management-service.ts';
+import { registerAdminManagementRoutes } from './admin/management-routes.ts';
 import { registerAuditLogRoutes } from './audit/routes.ts';
 import type { Handler, HttpRequest } from './http/types.ts';
 import { asObject, email, int, oneOf, optStr, str, uuidParam } from './http/validation.ts';
@@ -35,6 +37,8 @@ export interface AppDeps {
   contentWithdrawals?: ContentWithdrawalService;
   /** Consultation paginée et en lecture seule du journal d'audit. */
   auditLogs?: AuditLogService;
+  /** Gestion sécurisée des comptes et des rôles administrateurs. */
+  adminManagement?: AdminManagementService;
   /** Vérifie la base de données (route /health/ready). */
   checkReady?: () => Promise<boolean>;
 }
@@ -139,6 +143,7 @@ export function buildApp(deps: AppDeps): Router {
   if (deps.notifications) registerNotificationRoutes(router, { service: deps.notifications, actors: deps.actors });
   if (deps.contentWithdrawals) registerContentWithdrawalRoutes(router, { service: deps.contentWithdrawals, actors: deps.actors });
   if (deps.auditLogs) registerAuditLogRoutes(router, { service: deps.auditLogs, actors: deps.actors });
+  if (deps.adminManagement) registerAdminManagementRoutes(router, { service: deps.adminManagement, actors: deps.actors });
 
   return router;
 }
