@@ -3,18 +3,18 @@ import { ConflictError, NotFoundError, ValidationError } from '@movieshub/shared
 import type { AdminActor } from '../auth/actor.ts';
 import type { AuditEntry, AuditRepo, MediaFileRecord, MediaFileRepo } from '../ports.ts';
 import { buildObjectKey, choosePartSize, expectedPartSize, partCount, resolveUpload, type UploadKind } from '../storage/keys.ts';
-import type { R2Client } from '../storage/r2-client.ts';
+import type { R2Part } from '../storage/r2-client.ts';
 
-export type R2Port = Pick<
-  R2Client,
-  | 'presignPut'
-  | 'presignUploadPart'
-  | 'createMultipartUpload'
-  | 'listParts'
-  | 'completeMultipartUpload'
-  | 'abortMultipartUpload'
-  | 'headObject'
->;
+/** Port commun R2/Supabase. Les liens Supabase sont obtenus par requête réseau. */
+export interface R2Port {
+  presignPut(key: string, expiresSeconds: number): string | Promise<string>;
+  presignUploadPart(key: string, uploadId: string, partNumber: number, expiresSeconds: number): string | Promise<string>;
+  createMultipartUpload(key: string, contentType?: string): Promise<string>;
+  listParts(key: string, uploadId: string): Promise<R2Part[]>;
+  completeMultipartUpload(key: string, uploadId: string, parts: readonly R2Part[]): Promise<void>;
+  abortMultipartUpload(key: string, uploadId: string): Promise<void>;
+  headObject(key: string): Promise<{ sizeBytes: number; etag: string | null; contentType: string | null } | null>;
+}
 
 /** Durée de validité des liens d'envoi : assez longue pour un fichier de 2 Go sur une connexion lente. */
 export const UPLOAD_URL_TTL_SECONDS = 6 * 3600;
@@ -57,13 +57,15 @@ export class UploadService {
   private readonly media: MediaFileRepo;
   private readonly audit: AuditRepo;
   private readonly bucket: string;
+  private readonly supportsMultipart: boolean;
   private readonly now: () => Date;
 
-  constructor(deps: { r2: R2Port; media: MediaFileRepo; audit: AuditRepo; bucket: string; now?: () => Date }) {
+  constructor(deps: { r2: R2Port; media: MediaFileRepo; audit: AuditRepo; bucket: string; supportsMultipart?: boolean; now?: () => Date }) {
     this.r2 = deps.r2;
     this.media = deps.media;
     this.audit = deps.audit;
     this.bucket = deps.bucket;
+    this.supportsMultipart = deps.supportsMultipart ?? true;
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -83,11 +85,11 @@ export class UploadService {
     });
   }
 
-  private partLinks(m: MediaFileRecord, numbers: number[]): PartLink[] {
-    return numbers.map((n) => ({
+  private async partLinks(m: MediaFileRecord, numbers: number[]): Promise<PartLink[]> {
+    return Promise.all(numbers.map(async (n) => ({
       partNumber: n,
-      url: this.r2.presignUploadPart(m.objectKey, m.multipartUploadId as string, n, UPLOAD_URL_TTL_SECONDS),
-    }));
+      url: await this.r2.presignUploadPart(m.objectKey, m.multipartUploadId as string, n, UPLOAD_URL_TTL_SECONDS),
+    })));
   }
 
   private async load(id: string): Promise<MediaFileRecord> {
@@ -101,7 +103,9 @@ export class UploadService {
     const id = randomUUID();
     const objectKey = buildObjectKey(input.kind, id, ext, this.now());
 
-    if (!rule.multipart) {
+    // Supabase Storage est utilisé ici pour des transferts simples de test ; il ne fournit pas
+    // l'API multipart S3 nécessaire à la reprise R2 des gros fichiers.
+    if (!rule.multipart || !this.supportsMultipart) {
       await this.media.create({
         id, bucket: this.bucket, objectKey, kind: input.kind, mimeType: mime, sizeBytes: input.sizeBytes,
         multipartUploadId: null, multipartPartSize: null, uploadedByAdminId: actor.adminId,
@@ -109,7 +113,7 @@ export class UploadService {
       await this.log(actor, ctx, 'media.upload.init', id, { kind: input.kind, sizeBytes: input.sizeBytes, multipart: false });
       return {
         mediaFileId: id, kind: input.kind, multipart: false, sizeBytes: input.sizeBytes,
-        expiresInSeconds: UPLOAD_URL_TTL_SECONDS, url: this.r2.presignPut(objectKey, UPLOAD_URL_TTL_SECONDS),
+        expiresInSeconds: UPLOAD_URL_TTL_SECONDS, url: await this.r2.presignPut(objectKey, UPLOAD_URL_TTL_SECONDS),
       };
     }
 
@@ -130,7 +134,7 @@ export class UploadService {
     await this.log(actor, ctx, 'media.upload.init', id, { kind: input.kind, sizeBytes: input.sizeBytes, multipart: true, partSize, partCount: count });
     return {
       mediaFileId: id, kind: input.kind, multipart: true, sizeBytes: input.sizeBytes, expiresInSeconds: UPLOAD_URL_TTL_SECONDS,
-      partSize, partCount: count, parts: this.partLinks(record, Array.from({ length: count }, (_, i) => i + 1)),
+      partSize, partCount: count, parts: await this.partLinks(record, Array.from({ length: count }, (_, i) => i + 1)),
     };
   }
 
@@ -141,7 +145,7 @@ export class UploadService {
     const base = { mediaFileId: m.id, status: m.status, multipart: m.multipartUploadId !== null };
     if (m.status !== 'PENDING') return base;
     if (m.multipartUploadId === null) {
-      return { ...base, expiresInSeconds: UPLOAD_URL_TTL_SECONDS, url: this.r2.presignPut(m.objectKey, UPLOAD_URL_TTL_SECONDS) };
+      return { ...base, expiresInSeconds: UPLOAD_URL_TTL_SECONDS, url: await this.r2.presignPut(m.objectKey, UPLOAD_URL_TTL_SECONDS) };
     }
     const total = m.sizeBytes as number;
     const partSize = m.multipartPartSize as number;
@@ -150,7 +154,7 @@ export class UploadService {
     const missing = Array.from({ length: partCount(total, partSize) }, (_, i) => i + 1).filter((n) => !ok.has(n));
     return {
       ...base, partSize, expiresInSeconds: UPLOAD_URL_TTL_SECONDS,
-      uploadedParts: [...ok].sort((a, b) => a - b), missingParts: this.partLinks(m, missing),
+      uploadedParts: [...ok].sort((a, b) => a - b), missingParts: await this.partLinks(m, missing),
     };
   }
 
