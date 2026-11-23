@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   const media = new PrismaMediaFileRepo(prisma);
   const audit = new PrismaAuditRepo(prisma);
   const catalogBucket = env.catalogStorageProvider === 'supabase' ? env.supabase.catalogBucket : env.r2.bucket;
-  const uploads = new UploadService({ r2: catalogStorage, media, audit, bucket: catalogBucket, supportsMultipart: env.catalogStorageProvider !== 'supabase' });
+  const uploads = new UploadService({ r2: catalogStorage, media, audit, bucket: catalogBucket, supportsMultipart: env.catalogStorageProvider !== 'supabase', uploadUrlTtlSeconds: env.catalogStorageProvider === 'supabase' ? 2 * 3600 : undefined });
   const catalogRepo = new PrismaCatalogRepo(prisma);
   const catalogAdmin = new CatalogAdminService({ repo: catalogRepo, media, audit });
   const userDataRepo = new PrismaUserDataRepo(prisma);
