@@ -74,28 +74,22 @@ test('API : ignore les variables vides', () => {
   assert.throws(() => loadApiEnv({ ...apiSource(), R2_BUCKET: '   ' }), /R2_BUCKET/);
 });
 
-test('API : Supabase peut être sélectionné sans configurer R2', () => {
-  const source = apiSource();
-  delete source['R2_ACCOUNT_ID'];
-  delete source['R2_ACCESS_KEY_ID'];
-  delete source['R2_SECRET_ACCESS_KEY'];
-  delete source['R2_BUCKET'];
+test('API : Supabase est sélectionné pour les transferts cloud sans remplacer R2', () => {
   const env = loadApiEnv({
-    ...source,
-    STORAGE_PROVIDER: 'supabase',
+    ...apiSource(),
+    TRANSFER_STORAGE_PROVIDER: 'supabase',
     SUPABASE_URL: 'https://example-project.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'supabase-service-role-secret-that-is-long-enough',
     SUPABASE_STORAGE_BUCKET: 'movieshub-test',
   });
-  assert.equal(env.storageProvider, 'supabase');
+  assert.equal(env.transferStorageProvider, 'supabase');
   assert.equal(env.supabase.projectUrl, 'https://example-project.supabase.co');
   assert.equal(env.supabase.bucket, 'movieshub-test');
-  assert.equal(env.r2.bucket, '');
+  assert.equal(env.r2.bucket, 'movieshub');
 });
 
-test('API : Supabase exige URL, service role et bucket', () => {
-  const source = apiSource();
-  assert.throws(() => loadApiEnv({ ...source, STORAGE_PROVIDER: 'supabase' }), /SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_STORAGE_BUCKET/);
+test('API : Supabase exige URL, service role et bucket pour le transfert cloud', () => {
+  assert.throws(() => loadApiEnv({ ...apiSource(), TRANSFER_STORAGE_PROVIDER: 'supabase' }), /SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_STORAGE_BUCKET/);
 });
 
 test('Bot : configuration valide, ids Telegram en bigint', () => {
