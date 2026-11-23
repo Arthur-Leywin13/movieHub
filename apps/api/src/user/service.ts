@@ -191,7 +191,7 @@ export class UserDataService {
     const rec = await this.repo.createDownload({ userId, videoAssetId: versionId, sizeBytes: ch.version.sizeBytes, appVersion: opts.appVersion?.slice(0, 40) ?? null });
     await this.bump(ch.content.id, 'downloads');
     return {
-      downloadId: rec.id, url: this.signer.presignGet(ch.objectKey, this.ttl, { downloadName: filename }), expiresInSeconds: this.ttl,
+      downloadId: rec.id, url: await this.signer.presignGet(ch.objectKey, this.ttl, { downloadName: filename }), expiresInSeconds: this.ttl,
       sizeBytes: ch.version.sizeBytes, filename, allowLocalShare: ch.version.allowLocalShare,
     };
   }
@@ -206,7 +206,7 @@ export class UserDataService {
     const ext = /\.([a-z0-9]{1,5})$/i.exec(ch.objectKey)?.[1] ?? 'mkv';
     const episode = ch.episode && ch.season ? ` S${String(ch.season.number).padStart(2, '0')}E${String(ch.episode.number).padStart(2, '0')}` : '';
     const filename = `${safeName(ch.content.title)}${episode}${langs ? ` [${langs}]` : ''}.${ext}`;
-    return { downloadId: rec.id, url: this.signer.presignGet(ch.objectKey, this.ttl, { downloadName: filename }), expiresInSeconds: this.ttl, sizeBytes: ch.version.sizeBytes, filename, allowLocalShare: ch.version.allowLocalShare };
+    return { downloadId: rec.id, url: await this.signer.presignGet(ch.objectKey, this.ttl, { downloadName: filename }), expiresInSeconds: this.ttl, sizeBytes: ch.version.sizeBytes, filename, allowLocalShare: ch.version.allowLocalShare };
   }
 
   async finishDownload(userId: string, downloadId: string, status: 'COMPLETED' | 'FAILED' | 'CANCELED', reason: string | null): Promise<DownloadRecord> {
