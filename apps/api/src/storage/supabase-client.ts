@@ -41,7 +41,7 @@ export class SupabaseStorageError extends AppError {
 
 const encodeObjectPath = (key: string): string => key.split('/').map(encodeURIComponent).join('/');
 const safeDownloadName = (name: string): string =>
-  name.replace(/[^\\w.\\- ()]/g, '_').slice(0, 120);
+  name.replace(/[^\w.\- ()]/g, '_').slice(0, 120);
 
 export class SupabaseStorageClient {
   private readonly cfg: SupabaseStorageConfig;
@@ -50,7 +50,7 @@ export class SupabaseStorageClient {
 
   constructor(cfg: SupabaseStorageConfig, opts: { fetch?: FetchLike } = {}) {
     this.cfg = cfg;
-    this.baseUrl = cfg.projectUrl.replace(/\\/$/, '');
+    this.baseUrl = cfg.projectUrl.replace(/\/$/, '');
     this.fetchFn = opts.fetch ?? (fetch as unknown as FetchLike);
   }
 
@@ -88,7 +88,7 @@ export class SupabaseStorageClient {
 
   private absoluteSignedUrl(value: unknown): string {
     if (typeof value !== 'string' || !value) throw new SupabaseStorageError('Supabase n’a pas renvoyé de lien signé');
-    if (/^https?:\\/\\//i.test(value)) return value;
+    if (/^https?:\/\//i.test(value)) return value;
     const normalized = value.startsWith('/') ? value : `/${value}`;
     return normalized.startsWith('/storage/v1/')
       ? `${this.baseUrl}${normalized}`
