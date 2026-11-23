@@ -828,9 +828,9 @@ private fun BottomNavigationBar(screen: Screen, onNavigate: (Screen) -> Unit) {
 }
 
 @Composable
-private fun Header(title: String = "MoviesHub", onCategories: (() -> Unit)? = null, onSearch: (() -> Unit)? = null) {
+private fun Header(title: String = "Movie X", onCategories: (() -> Unit)? = null, onSearch: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (title == "MoviesHub") {
+        if (title == "Movie X") {
             Image(painterResource(R.drawable.moviehub_logo), contentDescription = "Logo Movie X", modifier = Modifier.size(38.dp), contentScale = ContentScale.Fit)
             Spacer(Modifier.width(10.dp))
         }
