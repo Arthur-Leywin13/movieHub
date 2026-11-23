@@ -30,7 +30,7 @@ test('API : configuration valide avec valeurs par défaut', () => {
   assert.equal(env.nodeEnv, 'development');
   assert.equal(env.port, 3000);
   assert.equal(env.r2.signedUrlTtlSeconds, 900);
-  assert.equal(env.r2.bucket, '');
+  assert.equal(env.r2.bucket, 'movieshub');
 });
 
 test('API : collecte toutes les erreurs d’un coup', () => {
@@ -90,7 +90,7 @@ test('API : Supabase est sélectionné pour les transferts cloud sans remplacer 
   assert.equal(env.transferStorageProvider, 'supabase');
   assert.equal(env.supabase.projectUrl, 'https://example-project.supabase.co');
   assert.equal(env.supabase.bucket, 'movieshub-test');
-  assert.equal(env.r2.bucket, 'movieshub');
+  assert.equal(env.r2.bucket, '');
 });
 
 test('API : Supabase exige URL, service role et bucket pour le transfert cloud', () => {
