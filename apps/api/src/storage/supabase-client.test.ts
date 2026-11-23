@@ -35,7 +35,7 @@ test('Supabase : obtient une URL signée pour un upload unique', async () => {
   }, {
     fetch: async () => ({
       status: 200, ok: true,
-      text: async () => JSON.stringify({ signedUrl: '/object/upload/sign/private-test/image/test.png?token=upload-token' }),
+      text: async () => JSON.stringify({ url: '/object/upload/sign/private-test/image/test.png?token=upload-token' }),
       headers: { get: () => null },
     }),
   });
