@@ -120,7 +120,7 @@ private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS,
 
 data class SessionUser(val id: String, val email: String, val displayName: String)
 data class AuthSessionData(val user: SessionUser, val accessToken: String, val refreshToken: String, val expiresAtMillis: Long)
-private data class HistoryEntry(
+internal data class HistoryEntry(
     val id: String,
     val content: MediaItem,
     val positionSeconds: Int,
@@ -163,7 +163,7 @@ private object SecureSessionStore {
     fun clear(context: Context) { preferences(context).edit().clear().apply() }
 }
 
-private data class Genre(val slug: String, val name: String)
+internal data class Genre(val slug: String, val name: String)
 
 private data class VideoVersion(
     val id: String,
@@ -172,7 +172,7 @@ private data class VideoVersion(
     val durationSeconds: Int?
 )
 
-private data class MediaItem(
+internal data class MediaItem(
     val id: String,
     val title: String,
     val type: String = "Film",
