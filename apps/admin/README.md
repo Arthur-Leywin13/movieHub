@@ -1,6 +1,6 @@
-# MovieHub — Dashboard d’administration
+# Movie X — Dashboard d’administration
 
-Interface web d’administration du catalogue MovieHub. Cette première version est volontairement légère : HTML, CSS et JavaScript natifs, sans dépendance de build ni framework à installer.
+Interface web d’administration du catalogue Movie X. Cette première version est volontairement légère : HTML, CSS et JavaScript natifs, sans dépendance de build ni framework à installer.
 
 ## Fonctions disponibles
 
@@ -50,4 +50,4 @@ Le serveur Python ne fait que servir les fichiers statiques. Il ne stocke aucun 
 - Les compteurs de statuts de la vue générale sont calculés sur les 50 premières fiches chargées ; le total affiché vient du nombre global renvoyé par l’API.
 - Les journaux d’audit existent côté API, mais une page de consultation des journaux et une gestion des comptes/rôles administrateurs restent à développer.
 - Les notifications sont actuellement des notifications internes à l’application ; l’envoi push FCM n’est pas inclus.
-- N’envoie que des médias que MovieHub est autorisé à distribuer.
+- N’envoie que des médias que Movie X est autorisé à distribuer.
