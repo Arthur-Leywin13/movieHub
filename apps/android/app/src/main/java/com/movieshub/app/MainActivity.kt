@@ -118,8 +118,8 @@ class MainActivity : ComponentActivity() {
 
 private enum class Screen { HOME, CATEGORIES, SEARCH, DETAIL, PLAYER, DOWNLOADS, PROFILE, SETTINGS, AUTH, FAVORITES, HISTORY }
 
-private data class SessionUser(val id: String, val email: String, val displayName: String)
-private data class AuthSessionData(val user: SessionUser, val accessToken: String, val refreshToken: String, val expiresAtMillis: Long)
+data class SessionUser(val id: String, val email: String, val displayName: String)
+data class AuthSessionData(val user: SessionUser, val accessToken: String, val refreshToken: String, val expiresAtMillis: Long)
 private data class HistoryEntry(
     val id: String,
     val content: MediaItem,
@@ -184,7 +184,7 @@ private data class MediaItem(
     val versions: List<VideoVersion> = emptyList()
 )
 
-private object MoviesHubApi {
+object MoviesHubApi {
     private fun request(path: String, method: String, body: JSONObject? = null, bearer: String? = null): String {
         val base = BuildConfig.API_BASE_URL.trimEnd('/')
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
@@ -245,6 +245,20 @@ private object MoviesHubApi {
             )
         } else session
         active to request(path, "GET", bearer = active.accessToken)
+    }
+
+    suspend fun authorizedPost(path: String, session: AuthSessionData, body: JSONObject): Pair<AuthSessionData, String> = withContext(Dispatchers.IO) {
+        val active = if (session.expiresAtMillis <= System.currentTimeMillis() + 60_000L) {
+            val refreshed = JSONObject(request("/auth/refresh", "POST", JSONObject().put("refreshToken", session.refreshToken)))
+            val user = refreshed.getJSONObject("user")
+            AuthSessionData(
+                SessionUser(user.getString("id"), user.getString("email"), user.getString("displayName")),
+                refreshed.getString("accessToken"),
+                refreshed.getString("refreshToken"),
+                System.currentTimeMillis() + refreshed.optLong("expiresIn", 900L) * 1000L
+            )
+        } else session
+        active to request(path, "POST", body = body, bearer = active.accessToken)
     }
 
     suspend fun putAuthorized(path: String, session: AuthSessionData, body: JSONObject? = null): AuthSessionData = withContext(Dispatchers.IO) {
@@ -620,6 +634,10 @@ private fun MoviesHubApp(incomingShareUri: Uri?, onIncomingShareConsumed: () -> 
                         Screen.DOWNLOADS -> DownloadsScreen(
                             importedVideos = importedVideos,
                             transferNotice = transferNotice,
+                            session = session,
+                            onSessionUpdated = { updated -> session = updated; SecureSessionStore.save(context, updated) },
+                            onLogin = { navigate(Screen.AUTH) },
+                            onCloudReceived = { importedVideos = listSharedVideos(context); transferNotice = "Fichier reçu dans ta bibliothèque privée." },
                             onNoticeConsumed = { transferNotice = null },
                             onTransferError = { transferNotice = it },
                             onPlayOffline = { path, title ->
@@ -1485,6 +1503,10 @@ private fun enqueuePrivateDownload(context: Context, item: MediaItem?, version: 
 private fun DownloadsScreen(
     importedVideos: List<SharedVideo>,
     transferNotice: String?,
+    session: AuthSessionData?,
+    onSessionUpdated: (AuthSessionData) -> Unit,
+    onLogin: () -> Unit,
+    onCloudReceived: () -> Unit,
     onNoticeConsumed: () -> Unit,
     onTransferError: (String) -> Unit,
     onPlayOffline: (String, String) -> Unit,
@@ -1494,6 +1516,7 @@ private fun DownloadsScreen(
     val scope = rememberCoroutineScope()
     val workInfos by WorkManager.getInstance(context).getWorkInfosByTagLiveData(PrivateDownloadWorker.TAG).observeAsState(emptyList())
     var transferMode by remember { mutableStateOf<String?>(null) }
+    var showCloudTransfer by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Header("Téléchargements")
         MovieHubText("Ta bibliothèque hors connexion", color = UiColors.muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp))
@@ -1505,6 +1528,11 @@ private fun DownloadsScreen(
                 }
             }
         }
+        OutlinedButton(
+            onClick = { showCloudTransfer = true },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = UiColors.accent)
+        ) { Icon(Icons.Default.CloudUpload, null); Spacer(Modifier.width(6.dp)); MovieHubText("Transfert cloud (test)") }
         Spacer(Modifier.height(18.dp))
         transferNotice?.let { notice ->
             Card(colors = CardDefaults.cardColors(containerColor = UiColors.panel), modifier = Modifier.fillMaxWidth()) {
@@ -1633,6 +1661,16 @@ private fun DownloadsScreen(
                     TextButton(onClick = { transferMode = null }) { MovieHubText("Fermer", color = UiColors.accent) }
                 }
             }
+        }
+        if (showCloudTransfer) {
+            CloudTransferDialog(
+                session = session,
+                onSessionUpdated = onSessionUpdated,
+                onLogin = onLogin,
+                onReceived = onCloudReceived,
+                onError = onTransferError,
+                onDismiss = { showCloudTransfer = false },
+            )
         }
     }
 }
