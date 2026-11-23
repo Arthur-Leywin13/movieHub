@@ -58,14 +58,16 @@ export class UploadService {
   private readonly audit: AuditRepo;
   private readonly bucket: string;
   private readonly supportsMultipart: boolean;
+  private readonly uploadUrlTtlSeconds: number;
   private readonly now: () => Date;
 
-  constructor(deps: { r2: R2Port; media: MediaFileRepo; audit: AuditRepo; bucket: string; supportsMultipart?: boolean; now?: () => Date }) {
+  constructor(deps: { r2: R2Port; media: MediaFileRepo; audit: AuditRepo; bucket: string; supportsMultipart?: boolean; uploadUrlTtlSeconds?: number; now?: () => Date }) {
     this.r2 = deps.r2;
     this.media = deps.media;
     this.audit = deps.audit;
     this.bucket = deps.bucket;
     this.supportsMultipart = deps.supportsMultipart ?? true;
+    this.uploadUrlTtlSeconds = deps.uploadUrlTtlSeconds ?? UPLOAD_URL_TTL_SECONDS;
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -88,7 +90,7 @@ export class UploadService {
   private async partLinks(m: MediaFileRecord, numbers: number[]): Promise<PartLink[]> {
     return Promise.all(numbers.map(async (n) => ({
       partNumber: n,
-      url: await this.r2.presignUploadPart(m.objectKey, m.multipartUploadId as string, n, UPLOAD_URL_TTL_SECONDS),
+      url: await this.r2.presignUploadPart(m.objectKey, m.multipartUploadId as string, n, this.uploadUrlTtlSeconds),
     })));
   }
 
@@ -113,7 +115,7 @@ export class UploadService {
       await this.log(actor, ctx, 'media.upload.init', id, { kind: input.kind, sizeBytes: input.sizeBytes, multipart: false });
       return {
         mediaFileId: id, kind: input.kind, multipart: false, sizeBytes: input.sizeBytes,
-        expiresInSeconds: UPLOAD_URL_TTL_SECONDS, url: await this.r2.presignPut(objectKey, UPLOAD_URL_TTL_SECONDS),
+        expiresInSeconds: this.uploadUrlTtlSeconds, url: await this.r2.presignPut(objectKey, UPLOAD_URL_TTL_SECONDS),
       };
     }
 
