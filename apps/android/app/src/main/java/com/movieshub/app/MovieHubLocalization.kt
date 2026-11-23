@@ -173,7 +173,7 @@ private val translations = mapOf(
     "Suppression impossible" to listOf("Unable to remove item", "No se pudo eliminar", "Pa kapab retire eleman an"),
     "Historique" to listOf("History", "Historial", "Istwa"),
     "Movie X" to listOf("Movie X", "Movie X", "Movie X"),
-    "MoviesHub" to listOf("Movie X", "Movie X", "Movie X"),
+    "Movie X" to listOf("Movie X", "Movie X", "Movie X"),
     "Rechercher" to listOf("Search", "Buscar", "Chèche"),
     "Explorer" to listOf("Explore", "Explorar", "Eksplore"),
     "Retrouve ce contenu dans le catalogue Movie X." to listOf("Find this title in the Movie X catalog.", "Encuentra este título en el catálogo de Movie X.", "Jwenn kontni sa a nan katalòg Movie X."),
