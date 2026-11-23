@@ -13,6 +13,7 @@ import { createHttpServer } from './http/server.ts';
 import { consoleLogger } from './http/types.ts';
 import { PrismaAdminRepo, PrismaAuditRepo, PrismaMediaFileRepo, PrismaSessionRepo, PrismaUserRepo } from './infra/prisma-repos.ts';
 import { R2Client } from './storage/r2-client.ts';
+import { SupabaseStorageClient } from './storage/supabase-client.ts';
 import { bootstrapAdmin } from './bootstrap.ts';
 import { CatalogAdminService } from './catalog/admin-service.ts';
 import { CatalogReadService } from './catalog/read-service.ts';
@@ -56,20 +57,27 @@ async function main(): Promise<void> {
     { accessSecret: env.jwtAccessSecret, refreshPepper: env.jwtRefreshSecret },
   );
   const actors = new ActorResolver({ auth, admins, botServiceToken: env.botServiceToken });
-  const r2 = new R2Client({
-    accountId: env.r2.accountId,
-    accessKeyId: env.r2.accessKeyId,
-    secretAccessKey: env.r2.secretAccessKey,
-    bucket: env.r2.bucket,
-  });
+  const storage = env.storageProvider === 'supabase'
+    ? new SupabaseStorageClient({
+        projectUrl: env.supabase.projectUrl,
+        serviceRoleKey: env.supabase.serviceRoleKey,
+        bucket: env.supabase.bucket,
+      })
+    : new R2Client({
+        accountId: env.r2.accountId,
+        accessKeyId: env.r2.accessKeyId,
+        secretAccessKey: env.r2.secretAccessKey,
+        bucket: env.r2.bucket,
+      });
+  const storageBucket = env.storageProvider === 'supabase' ? env.supabase.bucket : env.r2.bucket;
   const media = new PrismaMediaFileRepo(prisma);
   const audit = new PrismaAuditRepo(prisma);
-  const uploads = new UploadService({ r2, media, audit, bucket: env.r2.bucket });
+  const uploads = new UploadService({ r2: storage, media, audit, bucket: storageBucket, supportsMultipart: env.storageProvider === 'r2' });
   const catalogRepo = new PrismaCatalogRepo(prisma);
   const catalogAdmin = new CatalogAdminService({ repo: catalogRepo, media, audit });
   const userDataRepo = new PrismaUserDataRepo(prisma);
-  const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: r2, stats: userDataRepo });
-  const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: r2, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
+  const catalogRead = new CatalogReadService({ repo: catalogRepo, signer: storage, stats: userDataRepo });
+  const userData = new UserDataService({ repo: userDataRepo, catalog: catalogRepo, read: catalogRead, signer: storage, downloadTtlSeconds: env.r2.signedUrlTtlSeconds });
   const scheduledPublications = new ScheduledPublicationService({ prisma });
   const notifications = new NotificationService({ prisma });
   const contentWithdrawals = new ContentWithdrawalService({ prisma });
