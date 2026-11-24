@@ -21,7 +21,8 @@
     "db:search": "npm run db:search -w @movieshub/database",
     "db:seed": "npm run db:seed -w @movieshub/database",
     "db:setup": "npm run db:setup -w @movieshub/database",
-    "db:check": "npm run check:schema -w @movieshub/database"
+    "db:check": "npm run check:schema -w @movieshub/database",
+    "postinstall": "npm run db:generate"
   },
   "devDependencies": {
     "typescript": "~6.0.3"
