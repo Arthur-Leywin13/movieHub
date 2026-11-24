@@ -79,7 +79,9 @@ export class Bot {
   }
 
   private async env(uid: number): Promise<StepEnv> {
-    if (!this.languages) {
+    // Ne pas conserver indéfiniment une liste vide : si le bot a démarré avant
+    // l'ajout des langues en base, il doit les recharger automatiquement.
+    if (!this.languages || this.languages.length === 0) {
       const r = await this.d.api.call(uid, 'GET', '/languages');
       this.languages = (r['languages'] as J[]).map((l) => ({ code: l['code'], name: l['name'] }));
     }
