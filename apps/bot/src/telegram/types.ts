@@ -25,4 +25,6 @@ export interface TelegramPort {
   getFile(fileId: string): Promise<{ filePath: string; size: number | null }>;
   /** Serveur officiel uniquement (fichiers <= 20 Mo) : télécharge le fichier en mémoire. */
   downloadFile(filePath: string): Promise<Buffer>;
+  /** Bot API local : copie distante vers le disque en streaming. */
+  downloadFileToPath?(filePath: string, destination: string): Promise<number>;
 }
