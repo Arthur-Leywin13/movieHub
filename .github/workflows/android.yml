@@ -27,7 +27,7 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Assemble debug APK
-        run: gradle -p apps/android assembleDebug
+        run: gradle -p apps/android assembleDebug -PmovieshubApiBaseUrl=https://moviehub-production-e674b6df.up.railway.app
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
