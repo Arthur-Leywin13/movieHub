@@ -22,11 +22,15 @@ export class TelegramClient implements TelegramPort {
   private readonly token: string;
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
+  private readonly fileServerBaseUrl: string;
+  private readonly fileServerWorkDir: string;
 
-  constructor(opts: { token: string; baseUrl: string; fetch?: typeof fetch }) {
+  constructor(opts: { token: string; baseUrl: string; fileServerBaseUrl?: string; fileServerWorkDir?: string; fetch?: typeof fetch }) {
     this.token = opts.token;
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.fetchFn = opts.fetch ?? fetch;
+    this.fileServerBaseUrl = (opts.fileServerBaseUrl ?? '').replace(/\/+$/, '');
+    this.fileServerWorkDir = (opts.fileServerWorkDir ?? '/tmp/telegram-bot-api').replace(/\/+$/, '');
   }
 
   private async call<T>(method: string, payload: Record<string, unknown>, timeoutMs = 30_000): Promise<T> {
@@ -93,9 +97,18 @@ export class TelegramClient implements TelegramPort {
   /** Copie en streaming depuis le serveur Bot API local, sans charger le fichier entier en RAM. */
   async downloadFileToPath(filePath: string, destination: string): Promise<number> {
     const path = filePath.replace(/^\/+/, '');
+    let downloadUrl: string;
+    if (this.fileServerBaseUrl) {
+      const prefix = this.fileServerWorkDir + '/';
+      const relative = filePath.startsWith(prefix) ? filePath.slice(prefix.length) : path;
+      if (!relative || relative.split('/').some((part) => part === '..')) throw new TelegramError(400, 'Chemin de fichier local invalide');
+      downloadUrl = this.fileServerBaseUrl + '/' + relative.split('/').map(encodeURIComponent).join('/');
+    } else {
+      downloadUrl = this.baseUrl + '/file/bot' + this.token + '/' + path;
+    }
     let res: Response;
     try {
-      res = await this.fetchFn(`${this.baseUrl}/file/bot${this.token}/${path}`, { signal: AbortSignal.timeout(30 * 60_000) });
+      res = await this.fetchFn(downloadUrl, { signal: AbortSignal.timeout(30 * 60_000) });
     } catch {
       throw new TelegramError(0, 'Téléchargement Telegram impossible');
     }
