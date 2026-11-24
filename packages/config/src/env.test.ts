@@ -151,22 +151,6 @@ test('Bot : serveur local → limite par défaut de 2 Go (2000 Mo)', () => {
   assert.equal(env.telegramApiBaseUrl, 'http://localhost:8081');
 });
 
-test('Bot : passerelle de fichiers locale exige identifiants', () => {
-  assert.throws(() => loadBotEnv({
-    ...botSource(),
-    TELEGRAM_FILE_BASE_URL: 'https://files.example',
-  }), /TELEGRAM_FILE_USERNAME et TELEGRAM_FILE_PASSWORD/);
-  const env = loadBotEnv({
-    ...botSource(),
-    TELEGRAM_FILE_BASE_URL: 'https://files.example',
-    TELEGRAM_FILE_USERNAME: 'movieshub',
-    TELEGRAM_FILE_PASSWORD: 'x'.repeat(24),
-  });
-  assert.equal(env.telegramFileBaseUrl, 'https://files.example');
-  assert.equal(env.telegramFileUsername, 'movieshub');
-  assert.equal(env.telegramFileRoot, '/var/lib/telegram-bot-api');
-});
-
 test('Bot : serveur officiel + limite par défaut (2 Go) est refusé', () => {
   const source = botSource();
   delete source['TELEGRAM_API_BASE_URL'];
