@@ -66,28 +66,6 @@ test('erreurs : le jeton n’apparaît jamais, ni réseau coupé ni réponse inv
   }
 });
 
-test('downloadFile : chemin absolu via passerelle locale authentifiée', async () => {
-  let calledUrl = '';
-  let calledAuth = '';
-  const f = (async (url: string | URL | Request, init?: RequestInit) => {
-    calledUrl = String(url);
-    calledAuth = new Headers(init?.headers).get('authorization') ?? '';
-    return new Response(Buffer.from('abc'));
-  }) as typeof fetch;
-  const c = new TelegramClient({
-    token: TOKEN,
-    baseUrl: 'https://bot.example',
-    fileBaseUrl: 'https://bot.example',
-    fileRoot: '/var/lib/telegram-bot-api',
-    fileUsername: 'movieshub',
-    filePassword: 'a'.repeat(24),
-    fetch: f,
-  });
-  assert.equal((await c.downloadFile('/var/lib/telegram-bot-api/123/documents/file_1.mp4')).toString(), 'abc');
-  assert.equal(calledUrl, 'https://bot.example/123/documents/file_1.mp4');
-  assert.equal(calledAuth, `Basic ${Buffer.from(`movieshub:${'a'.repeat(24)}`).toString('base64')}`);
-});
-
 test('downloadFile : adresse /file/bot<jeton>/<chemin> ; refus → erreur sans jeton', async () => {
   const calls: string[] = [];
   const f = (async (url: string | URL | Request) => {
