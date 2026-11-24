@@ -46,14 +46,26 @@ export class FileResolver {
   async resolve(ref: FileRef): Promise<LocalFile> {
     const info = await this.tg.getFile(ref.fileId);
     if (isAbsolute(info.filePath)) {
+      // Le chemin absolu est sur l'hôte du Bot API, pas dans ce service Railway.
+      await mkdir(this.tmpDir, { recursive: true });
+      const path = join(this.tmpDir, `${randomUUID()}.bin`);
       let size: number;
       try {
-        size = (await stat(info.filePath)).size;
+        if (this.tg.downloadFileToPath) {
+          size = await this.tg.downloadFileToPath(info.filePath, path);
+        } else {
+          const data = await this.tg.downloadFile(info.filePath);
+          size = data.length;
+          await writeFile(path, data);
+        }
       } catch {
-        throw new FileError('Fichier introuvable sur le disque : le bot doit partager le volume du serveur Bot API local');
+        throw new FileError('Téléchargement depuis le serveur Bot API local impossible');
       }
-      if (size > this.maxBytes) throw new FileError('Fichier trop volumineux');
-      return { path: info.filePath, size, name: ref.name, temporary: false };
+      if (size > this.maxBytes) {
+        await (await import('node:fs/promises')).rm(path, { force: true });
+        throw new FileError('Fichier trop volumineux');
+      }
+      return { path, size, name: ref.name, temporary: true };
     }
     const data = await this.tg.downloadFile(info.filePath);
     if (data.length > this.maxBytes) throw new FileError('Fichier trop volumineux');
