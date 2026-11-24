@@ -37,3 +37,6 @@ Le transfert utilise le fournisseur configuré par l'API (`TRANSFER_STORAGE_PROV
 - Authentification, téléchargement local en arrière-plan, partage Wi-Fi direct/QR, favoris et historique restent à connecter.
 
 Le workflow GitHub Actions `.github/workflows/android.yml` compile l'APK debug sur les changements Android. Le test réel R2 reste volontairement reporté.
+
+
+Build de validation: chaque mise à jour de ce dossier déclenche la compilation Android sur GitHub Actions et publie l'APK debug en artifact (conservation 14 jours).
