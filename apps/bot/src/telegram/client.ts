@@ -92,7 +92,7 @@ export class TelegramClient implements TelegramPort {
 
   /** Copie en streaming depuis le serveur Bot API local, sans charger le fichier entier en RAM. */
   async downloadFileToPath(filePath: string, destination: string): Promise<number> {
-    const path = filePath.replace(/^\\/+/, '');
+    const path = filePath.replace(/^\/+/, '');
     let res: Response;
     try {
       res = await this.fetchFn(`${this.baseUrl}/file/bot${this.token}/${path}`, { signal: AbortSignal.timeout(30 * 60_000) });
