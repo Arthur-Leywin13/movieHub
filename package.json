@@ -12,6 +12,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "npm run start -w @movieshub/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "db:generate": "npm run generate -w @movieshub/database",
