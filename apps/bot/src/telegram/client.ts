@@ -1,4 +1,8 @@
 import type { Keyboard, TelegramPort, TgUpdate } from './types.ts';
+import { createWriteStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 export class TelegramError extends Error {
   readonly code: number;
@@ -85,4 +89,23 @@ export class TelegramClient implements TelegramPort {
     if (!res.ok) throw new TelegramError(res.status, 'Téléchargement Telegram refusé');
     return Buffer.from(await res.arrayBuffer());
   }
+
+  /** Copie en streaming depuis le serveur Bot API local, sans charger le fichier entier en RAM. */
+  async downloadFileToPath(filePath: string, destination: string): Promise<number> {
+    const path = filePath.replace(/^\\/+/, '');
+    let res: Response;
+    try {
+      res = await this.fetchFn(`${this.baseUrl}/file/bot${this.token}/${path}`, { signal: AbortSignal.timeout(30 * 60_000) });
+    } catch {
+      throw new TelegramError(0, 'Téléchargement Telegram impossible');
+    }
+    if (!res.ok || !res.body) throw new TelegramError(res.status, 'Téléchargement Telegram refusé');
+    try {
+      await pipeline(Readable.fromWeb(res.body as any), createWriteStream(destination));
+      return (await stat(destination)).size;
+    } catch {
+      throw new TelegramError(0, 'Écriture du fichier Telegram impossible');
+    }
+  }
+
 }
