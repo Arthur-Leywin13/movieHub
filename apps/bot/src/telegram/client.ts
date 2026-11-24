@@ -1,3 +1,4 @@
+import { isAbsolute, relative, sep } from 'node:path';
 import type { Keyboard, TelegramPort, TgUpdate } from './types.ts';
 
 export class TelegramError extends Error {
@@ -17,11 +18,27 @@ const markup = (kb?: Keyboard) =>
 export class TelegramClient implements TelegramPort {
   private readonly token: string;
   private readonly baseUrl: string;
+  private readonly fileBaseUrl: string | null;
+  private readonly fileRoot: string;
+  private readonly fileAuthorization: string | null;
   private readonly fetchFn: typeof fetch;
 
-  constructor(opts: { token: string; baseUrl: string; fetch?: typeof fetch }) {
+  constructor(opts: {
+    token: string;
+    baseUrl: string;
+    fileBaseUrl?: string;
+    fileRoot?: string;
+    fileUsername?: string;
+    filePassword?: string;
+    fetch?: typeof fetch;
+  }) {
     this.token = opts.token;
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
+    this.fileBaseUrl = opts.fileBaseUrl?.replace(/\/+$/, '') ?? null;
+    this.fileRoot = opts.fileRoot ?? '/var/lib/telegram-bot-api';
+    this.fileAuthorization = opts.fileUsername && opts.filePassword
+      ? `Basic ${Buffer.from(`${opts.fileUsername}:${opts.filePassword}`).toString('base64')}`
+      : null;
     this.fetchFn = opts.fetch ?? fetch;
   }
 
@@ -76,9 +93,25 @@ export class TelegramClient implements TelegramPort {
   }
 
   async downloadFile(filePath: string): Promise<Buffer> {
+    let url: string;
+    const headers: Record<string, string> = {};
+    if (isAbsolute(filePath)) {
+      if (!this.fileBaseUrl || !this.fileAuthorization) {
+        throw new TelegramError(400, 'Passerelle de fichiers locale non configurée');
+      }
+      const rel = relative(this.fileRoot, filePath);
+      if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+        throw new TelegramError(400, 'Chemin de fichier local invalide');
+      }
+      url = `${this.fileBaseUrl}/${rel.split(sep).map(encodeURIComponent).join('/')}`;
+      headers.authorization = this.fileAuthorization;
+    } else {
+      url = `${this.baseUrl}/file/bot${this.token}/${filePath}`;
+    }
+
     let res: Response;
     try {
-      res = await this.fetchFn(`${this.baseUrl}/file/bot${this.token}/${filePath}`, { signal: AbortSignal.timeout(5 * 60_000) });
+      res = await this.fetchFn(url, { headers, signal: AbortSignal.timeout(5 * 60_000) });
     } catch {
       throw new TelegramError(0, 'Téléchargement Telegram impossible');
     }
