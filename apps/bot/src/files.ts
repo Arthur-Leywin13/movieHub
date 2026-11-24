@@ -29,8 +29,9 @@ export class FileError extends Error {
 
 /**
  * Rend un fichier Telegram lisible sur disque.
- * - Serveur Bot API local : getFile renvoie un chemin absolu, lu directement (le bot doit partager le volume).
- * - Serveur officiel : chemin relatif, fichier téléchargé en mémoire (20 Mo max) puis copié en temporaire.
+ * - Si le volume local est partagé, lit directement le chemin absolu.
+ * - Sinon, télécharge le fichier depuis la passerelle HTTP authentifiée.
+ * - Les chemins relatifs (Bot API officiel) sont téléchargés puis copiés en temporaire.
  */
 export class FileResolver {
   private readonly tg: TelegramPort;
@@ -46,14 +47,15 @@ export class FileResolver {
   async resolve(ref: FileRef): Promise<LocalFile> {
     const info = await this.tg.getFile(ref.fileId);
     if (isAbsolute(info.filePath)) {
-      let size: number;
       try {
-        size = (await stat(info.filePath)).size;
-      } catch {
-        throw new FileError('Fichier introuvable sur le disque : le bot doit partager le volume du serveur Bot API local');
+        const size = (await stat(info.filePath)).size;
+        if (size > this.maxBytes) throw new FileError('Fichier trop volumineux');
+        return { path: info.filePath, size, name: ref.name, temporary: false };
+      } catch (err) {
+        if (err instanceof FileError) throw err;
+        // Le Bot API local peut tourner dans un autre service Railway : son chemin absolu
+        // n'existe alors pas dans le conteneur du bot. La passerelle le sert avec auth.
       }
-      if (size > this.maxBytes) throw new FileError('Fichier trop volumineux');
-      return { path: info.filePath, size, name: ref.name, temporary: false };
     }
     const data = await this.tg.downloadFile(info.filePath);
     if (data.length > this.maxBytes) throw new FileError('Fichier trop volumineux');
