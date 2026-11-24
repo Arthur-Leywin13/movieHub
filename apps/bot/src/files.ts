@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { TelegramPort } from './telegram/types.ts';
@@ -29,8 +29,8 @@ export class FileError extends Error {
 
 /**
  * Rend un fichier Telegram lisible sur disque.
- * - Serveur Bot API local : getFile renvoie un chemin absolu, lu directement (le bot doit partager le volume).
- * - Serveur officiel : chemin relatif, fichier téléchargé en mémoire (20 Mo max) puis copié en temporaire.
+ * - Bot API local : getFile renvoie un chemin absolu sur le serveur Telegram ; copie HTTP en streaming vers le bot.
+ * - Serveur officiel : chemin relatif, fichier téléchargé en mémoire puis copié en temporaire.
  */
 export class FileResolver {
   private readonly tg: TelegramPort;
@@ -62,7 +62,7 @@ export class FileResolver {
         throw new FileError('Téléchargement depuis le serveur Bot API local impossible');
       }
       if (size > this.maxBytes) {
-        await (await import('node:fs/promises')).rm(path, { force: true });
+        await rm(path, { force: true });
         throw new FileError('Fichier trop volumineux');
       }
       return { path, size, name: ref.name, temporary: true };
