@@ -188,6 +188,9 @@ export interface BotEnv {
   telegramBotToken: string;
   /** Serveur Bot API : officiel (https://api.telegram.org) ou local (fichiers jusqu'à 2 Go). */
   telegramApiBaseUrl: string;
+  /** HTTP file server bundled with the local Bot API (same container, port 8080). */
+  telegramFileBaseUrl: string;
+  telegramFileWorkDir: string;
   /** Taille maximale d'un fichier accepté par le bot, en octets. */
   maxFileBytes: number;
   apiBaseUrl: string;
@@ -272,6 +275,8 @@ export function loadBotEnv(source: EnvSource = process.env): BotEnv {
       protocols: ['http:', 'https:'],
       default: `https://${OFFICIAL_BOT_API_HOST}`,
     }),
+    telegramFileBaseUrl: source['TELEGRAM_FILE_BASE_URL']?.trim() ?? '',
+    telegramFileWorkDir: source['TELEGRAM_FILE_WORK_DIR']?.trim() || '/tmp/telegram-bot-api',
     maxFileBytes: r.int('BOT_MAX_FILE_BYTES', {
       default: TELEGRAM_LOCAL_MAX_FILE_BYTES,
       min: 1,
@@ -282,6 +287,14 @@ export function loadBotEnv(source: EnvSource = process.env): BotEnv {
     adminTelegramIds: r.telegramIds('TELEGRAM_ADMIN_IDS'),
     stateDir: r.str('BOT_STATE_DIR', { default: './data/bot' }),
   };
+  if (env.telegramFileBaseUrl) {
+    try {
+      const fileUrl = new URL(env.telegramFileBaseUrl);
+      if (!['http:', 'https:'].includes(fileUrl.protocol)) r.issues.push('TELEGRAM_FILE_BASE_URL : protocole http(s) attendu');
+    } catch {
+      r.issues.push('TELEGRAM_FILE_BASE_URL : URL invalide');
+    }
+  }
   if (isOfficialBotApi(env.telegramApiBaseUrl) && env.maxFileBytes > TELEGRAM_OFFICIAL_MAX_DOWNLOAD_BYTES) {
     r.issues.push(
       'BOT_MAX_FILE_BYTES : au-delà de 20 Mo, TELEGRAM_API_BASE_URL doit pointer vers un serveur Bot API local',
