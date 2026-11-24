@@ -34,14 +34,7 @@ async function main(): Promise<void> {
     allowedIds.add(Number(id));
   }
 
-  const tg = new TelegramClient({
-    token: env.telegramBotToken,
-    baseUrl: env.telegramApiBaseUrl,
-    fileBaseUrl: env.telegramFileBaseUrl || undefined,
-    fileRoot: env.telegramFileRoot,
-    fileUsername: env.telegramFileUsername || undefined,
-    filePassword: env.telegramFilePassword || undefined,
-  });
+  const tg = new TelegramClient({ token: env.telegramBotToken, baseUrl: env.telegramApiBaseUrl });
   const api = new ApiClient({ baseUrl: env.apiBaseUrl, serviceToken: env.botServiceToken });
   const bot = new Bot({
     tg, api, allowedIds, maxFileBytes: env.maxFileBytes, log,
