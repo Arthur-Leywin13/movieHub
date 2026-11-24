@@ -186,13 +186,8 @@ export interface ApiEnv {
 export interface BotEnv {
   nodeEnv: NodeEnv;
   telegramBotToken: string;
-  /** Serveur Bot API : officiel ou local. */
+  /** Serveur Bot API : officiel (https://api.telegram.org) ou local (fichiers jusqu'à 2 Go). */
   telegramApiBaseUrl: string;
-  /** Passerelle HTTP authentifiée qui sert les fichiers du volume Bot API local. */
-  telegramFileBaseUrl: string;
-  telegramFileUsername: string;
-  telegramFilePassword: string;
-  telegramFileRoot: string;
   /** Taille maximale d'un fichier accepté par le bot, en octets. */
   maxFileBytes: number;
   apiBaseUrl: string;
@@ -277,12 +272,6 @@ export function loadBotEnv(source: EnvSource = process.env): BotEnv {
       protocols: ['http:', 'https:'],
       default: `https://${OFFICIAL_BOT_API_HOST}`,
     }),
-    telegramFileBaseUrl: source['TELEGRAM_FILE_BASE_URL']?.trim()
-      ? r.url('TELEGRAM_FILE_BASE_URL', { protocols: ['http:', 'https:'] })
-      : '',
-    telegramFileUsername: source['TELEGRAM_FILE_USERNAME']?.trim() ?? '',
-    telegramFilePassword: source['TELEGRAM_FILE_PASSWORD'] ?? '',
-    telegramFileRoot: source['TELEGRAM_FILE_ROOT']?.trim() || '/var/lib/telegram-bot-api',
     maxFileBytes: r.int('BOT_MAX_FILE_BYTES', {
       default: TELEGRAM_LOCAL_MAX_FILE_BYTES,
       min: 1,
@@ -297,15 +286,6 @@ export function loadBotEnv(source: EnvSource = process.env): BotEnv {
     r.issues.push(
       'BOT_MAX_FILE_BYTES : au-delà de 20 Mo, TELEGRAM_API_BASE_URL doit pointer vers un serveur Bot API local',
     );
-  }
-  if (env.telegramFileBaseUrl && (!env.telegramFileUsername || env.telegramFilePassword.length < 24)) {
-    r.issues.push('TELEGRAM_FILE_USERNAME et TELEGRAM_FILE_PASSWORD (minimum 24 caractères) sont requis avec TELEGRAM_FILE_BASE_URL');
-  }
-  if (!env.telegramFileBaseUrl && (env.telegramFileUsername || env.telegramFilePassword)) {
-    r.issues.push('TELEGRAM_FILE_USERNAME/PASSWORD nécessitent TELEGRAM_FILE_BASE_URL');
-  }
-  if (!env.telegramFileRoot.startsWith('/')) {
-    r.issues.push('TELEGRAM_FILE_ROOT : chemin absolu attendu');
   }
   r.done();
   return env;
