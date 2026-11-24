@@ -34,7 +34,7 @@ async function main(): Promise<void> {
     allowedIds.add(Number(id));
   }
 
-  const tg = new TelegramClient({ token: env.telegramBotToken, baseUrl: env.telegramApiBaseUrl });
+  const tg = new TelegramClient({ token: env.telegramBotToken, baseUrl: env.telegramApiBaseUrl, fileServerBaseUrl: env.telegramFileBaseUrl, fileServerWorkDir: env.telegramFileWorkDir });
   const api = new ApiClient({ baseUrl: env.apiBaseUrl, serviceToken: env.botServiceToken });
   const bot = new Bot({
     tg, api, allowedIds, maxFileBytes: env.maxFileBytes, log,
