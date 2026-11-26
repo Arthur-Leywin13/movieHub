@@ -110,10 +110,11 @@ export class TelegramClient implements TelegramPort {
     let res: Response;
     try {
       res = await this.fetchFn(downloadUrl, { signal: AbortSignal.timeout(30 * 60_000) });
-    } catch {
-      throw new TelegramError(0, 'Téléchargement Telegram impossible');
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new TelegramError(0, `Téléchargement Telegram impossible: ${detail.slice(0, 180)}`);
     }
-    if (!res.ok || !res.body) throw new TelegramError(res.status, 'Téléchargement Telegram refusé');
+    if (!res.ok || !res.body) throw new TelegramError(res.status, `Téléchargement Telegram refusé (HTTP ${res.status})`);
     try {
       await pipeline(Readable.fromWeb(res.body as any), createWriteStream(destination));
       return (await stat(destination)).size;
