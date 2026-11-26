@@ -87,10 +87,11 @@ export class TelegramClient implements TelegramPort {
     let res: Response;
     try {
       res = await this.fetchFn(`${this.baseUrl}/file/bot${this.token}/${filePath}`, { signal: AbortSignal.timeout(5 * 60_000) });
-    } catch {
-      throw new TelegramError(0, 'Téléchargement Telegram impossible');
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new TelegramError(0, `Téléchargement Telegram impossible: ${detail.slice(0, 180)}`);
     }
-    if (!res.ok) throw new TelegramError(res.status, 'Téléchargement Telegram refusé');
+    if (!res.ok) throw new TelegramError(res.status, `Téléchargement Telegram refusé (HTTP ${res.status})`);
     return Buffer.from(await res.arrayBuffer());
   }
 
@@ -116,8 +117,9 @@ export class TelegramClient implements TelegramPort {
     try {
       await pipeline(Readable.fromWeb(res.body as any), createWriteStream(destination));
       return (await stat(destination)).size;
-    } catch {
-      throw new TelegramError(0, 'Écriture du fichier Telegram impossible');
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new TelegramError(0, `Écriture du fichier Telegram impossible: ${detail.slice(0, 180)}`);
     }
   }
 
