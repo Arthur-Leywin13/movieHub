@@ -58,7 +58,9 @@ export class FileResolver {
           size = data.length;
           await writeFile(path, data);
         }
-      } catch {
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error('[MoviesHub] Local Bot API file transfer failed:', detail.slice(0, 240));
         throw new FileError('Téléchargement depuis le serveur Bot API local impossible');
       }
       if (size > this.maxBytes) {
