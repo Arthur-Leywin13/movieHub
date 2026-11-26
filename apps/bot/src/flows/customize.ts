@@ -124,11 +124,28 @@ export function customizeFlows(): Flow[] {
       ...versionSteps({ optionalFile: false }), publishChoice(),
     ]),
 
-    flow('edit:season', ['seasonNumber', 'seasonDate'], seasonSteps()),
+    flow('edit:season', ['seasonNumber', 'seasonDate', 'seasonPublish'], [
+      ...seasonSteps(),
+      choiceStep({
+        id: 'seasonPublish', prompt: 'Publier cette saison maintenant ?',
+        options: () => [{ label: '🚀 Publier la saison', value: 'publish' }, { label: '💾 Garder en brouillon', value: 'draft' }],
+        apply: (d, v) => (d['publishSeason'] = v === 'publish'),
+      }),
+    ]),
 
-    flow('edit:episodes', ['pickSeason', 'epMore', 'confirmEp'], [
+    flow('edit:episodes', ['pickSeason', 'epMore', 'confirmEp', 'publishEpisodes', 'publishSeason'], [
       pickSeason(), ...episodeSteps(),
       choiceStep({ id: 'confirmEp', prompt: (d) => `Créer ${d['episodes'].length} épisode(s) ?`, options: () => [{ label: '✅ Créer', value: 'ok' }], apply: (d, v) => (d['confirmed'] = v === 'ok') }),
+      choiceStep({
+        id: 'publishEpisodes', prompt: 'Publier les épisodes et leurs versions après création ?',
+        options: () => [{ label: '🚀 Publier', value: 'publish' }, { label: '💾 Brouillon', value: 'draft' }],
+        apply: (d, v) => (d['publishEpisodes'] = v === 'publish'),
+      }),
+      choiceStep({
+        id: 'publishSeason', prompt: 'Publier aussi la saison sélectionnée ?',
+        options: () => [{ label: '🚀 Publier la saison', value: 'publish' }, { label: 'Ne pas changer', value: 'keep' }],
+        apply: (d, v) => (d['publishSeason'] = v === 'publish'),
+      }),
     ], (a) => ({ ...a, episodes: [] })),
 
     flow('edit:status', ['statusChoice'], [
