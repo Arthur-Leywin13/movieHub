@@ -198,13 +198,20 @@ export async function runPipeline(s: Session, deps: PipelineDeps): Promise<Pipel
       const warn = run.warnings.length ? `\n⚠️ ${run.warnings.join('\n⚠️ ')}\nAjoutez la langue via « Langues » pour l’annoncer sur la fiche.` : '';
       return done(`Version ajoutée${d['publishVersion'] ? ' et publiée' : ' (brouillon)'}. Les versions existantes sont conservées.${warn}`, contentId);
     }
-    case 'edit:season':
-      await run.once('season', async () => void (await run.call('POST', `/admin/contents/${contentId}/seasons`, { number: d['seasonNumber'], releaseDate: d['seasonDate'] })));
-      return done(`Saison ${d['seasonNumber']} créée (brouillon).`, contentId);
+    case 'edit:season': {
+      await run.once('season', async () => {
+        const r = await run.call('POST', `/admin/contents/${contentId}/seasons`, { number: d['seasonNumber'], releaseDate: d['seasonDate'] });
+        s.progress['seasonId'] = r['season']['id'];
+      });
+      const seasonId = s.progress['seasonId'] as string;
+      if (d['publishSeason']) await run.publish(`/admin/seasons/${seasonId}/status`, 'season');
+      return done(`Saison ${d['seasonNumber']} créée${d['publishSeason'] ? ' et publiée' : ' en brouillon'}.`, contentId);
+    }
     case 'edit:episodes': {
       if (!d['confirmed']) throw new UserError('Création non confirmée.');
-      await episodes(run, d['seasonId'], d['episodes'], false);
-      return done(`${d['episodes'].length} épisode(s) créé(s) en brouillon.`, contentId);
+      if (d['publishSeason']) await run.publish(`/admin/seasons/${d['seasonId']}/status`, 'season');
+      await episodes(run, d['seasonId'], d['episodes'], Boolean(d['publishEpisodes']));
+      return done(`${d['episodes'].length} épisode(s) créé(s)${d['publishEpisodes'] ? ' et publié(s)' : ' en brouillon'}.`, contentId);
     }
     case 'edit:status': {
       await run.once('status', async () => void (await run.call('POST', `/admin/contents/${contentId}/status`, { status: d['newStatus'] })));
