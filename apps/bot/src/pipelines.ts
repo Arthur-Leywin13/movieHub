@@ -87,7 +87,36 @@ class Run {
     return versionId;
   }
   async publish(path: string, key: string): Promise<void> {
-    await this.once(`pub:${key}`, async () => void (await this.call('POST', path, { status: 'PUBLISHED' })));
+    await this.once(`pub:${key}`, async () => {
+      // Le détail admin contient le statut actuel du contenu et de ses enfants.
+      // Ne pas envoyer PUBLISHED si la ressource est déjà publiée : l'API refuse
+      // la transition PUBLISHED -> PUBLISHED.
+      const contentId = this.s.data['contentId'] as string | undefined;
+      const targetId = path.match(/\\/(?:contents|seasons|episodes|versions)\\/([^/]+)\\/status$/)?.[1];
+      if (contentId && targetId) {
+        const detail = await this.call<J>('GET', `/admin/contents/${contentId}`);
+        const findStatus = (node: unknown): string | undefined => {
+          if (Array.isArray(node)) {
+            for (const item of node) {
+              const status = findStatus(item);
+              if (status) return status;
+            }
+            return undefined;
+          }
+          if (node && typeof node === 'object') {
+            const obj = node as Record<string, unknown>;
+            if (obj['id'] === targetId && typeof obj['status'] === 'string') return obj['status'];
+            for (const value of Object.values(obj)) {
+              const status = findStatus(value);
+              if (status) return status;
+            }
+          }
+          return undefined;
+        };
+        if (findStatus(detail) === 'PUBLISHED') return;
+      }
+      await this.call('POST', path, { status: 'PUBLISHED' });
+    });
   }
 }
 
