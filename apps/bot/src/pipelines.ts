@@ -92,7 +92,8 @@ class Run {
       // Ne pas envoyer PUBLISHED si la ressource est déjà publiée : l'API refuse
       // la transition PUBLISHED -> PUBLISHED.
       const contentId = this.s.data['contentId'] as string | undefined;
-      const targetId = path.match(/\\/(?:contents|seasons|episodes|versions)\\/([^/]+)\\/status$/)?.[1];
+      const pathParts = path.split('/').filter(Boolean);
+      const targetId = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : undefined;
       if (contentId && targetId) {
         const detail = await this.call<J>('GET', `/admin/contents/${contentId}`);
         const findStatus = (node: unknown): string | undefined => {
